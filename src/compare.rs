@@ -148,6 +148,7 @@ fn handle_both_present(
         if orig_is_dir && backup_is_dir {
             if config.follow {
                 // Traverse the symlinked directories
+                stats.inc_similarities();
                 compare_recursive(orig_path, backup_path, config, stats);
             } else {
                 println!(
@@ -171,6 +172,8 @@ fn handle_both_present(
                         bt
                     );
                     stats.inc_different();
+                } else {
+                    stats.inc_similarities();
                 }
             }
             _ => {
@@ -208,6 +211,7 @@ fn handle_both_present(
             }
         }
 
+        stats.inc_similarities();
         compare_recursive(orig_path, backup_path, config, stats);
     } else if orig_meta.is_file() {
         if !backup_meta.is_file() {
@@ -230,10 +234,12 @@ fn handle_both_present(
                 println!("DIFFERENT-FILE [{}]: {}", r, orig_path.display());
                 stats.inc_different();
             }
+            Some(_) => {
+                stats.inc_similarities();
+            }
             None => {
                 // Error already reported inside compare_file
             }
-            _ => {}
         }
     } else {
         // Special file type (socket, FIFO, device, etc.)

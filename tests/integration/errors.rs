@@ -140,9 +140,8 @@ fn original_is_file_not_dir() {
 // ── Error counting edge cases ───────────────────────────────
 
 #[test]
-fn errors_only_does_not_exit_1() {
-    // When only errors occur (no missing/different/extras), exit code should be 0
-    // because has_differences() only checks missing/different/extras, not errors.
+fn errors_cause_nonzero_exit() {
+    // Errors should cause a non-zero exit even when there are no missing/different/extras.
     let _lock = UNREADABLE_LOCK.lock().unwrap();
     setup_unreadable_file();
     let (a, b) = testdata("unreadable");
@@ -156,7 +155,6 @@ fn errors_only_does_not_exit_1() {
         "Expected Errors: 1, got:\n{}",
         output
     );
-    // file.txt matches, noperm.txt errors → no missing/different/extras
     assert!(
         output.contains("Missing/different: 0"),
         "Expected no differences, got:\n{}",
@@ -167,18 +165,18 @@ fn errors_only_does_not_exit_1() {
         "Expected no extras, got:\n{}",
         output
     );
-    // Exit code 0 because has_differences doesn't count errors
+    // Errors alone should trigger non-zero exit
     assert_eq!(
-        code, 0,
-        "Expected exit 0 with errors-only (no differences), got {}",
+        code, 1,
+        "Expected exit 1 when errors occurred, got {}",
         code
     );
 }
 
 #[test]
-fn error_file_counted_as_similarity() {
-    // When compare_file returns None (error), the file is neither missing nor different,
-    // so it inflates the similarities count. This test documents that behavior.
+fn error_file_not_counted_as_similarity() {
+    // When compare_file returns None (error), the file must NOT be counted as a similarity.
+    // Similarities should only count items that were actually verified to match.
     let _lock = UNREADABLE_LOCK.lock().unwrap();
     setup_unreadable_file();
     let (a, b) = testdata("unreadable");
@@ -187,17 +185,16 @@ fn error_file_counted_as_similarity() {
     teardown_unreadable_file();
 
     // 2 original items: file.txt + noperm.txt
-    // noperm.txt errors, file.txt matches
-    // similarities = original - missing - different = 2 - 0 - 0 = 2
-    // This means the errored file is counted as a "similarity" in the summary
+    // noperm.txt errors → not a similarity
+    // file.txt matches → 1 similarity
     assert!(
         output.contains("Original items processed: 2"),
         "got:\n{}",
         output
     );
     assert!(
-        output.contains("Similarities: 2"),
-        "Errored file inflates similarities (orig - missing - different), got:\n{}",
+        output.contains("Similarities: 1"),
+        "Errored file should not count as similarity, got:\n{}",
         output
     );
 }

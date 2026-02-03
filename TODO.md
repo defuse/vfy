@@ -127,10 +127,12 @@
   - Test: `flags::all_with_ignore_skips_hashing`
 
 ### Exit code / error counting
-- [x] 44. Errors-only scenario does NOT trigger exit code 1 (has_differences doesn't check errors)
-  - Test: `errors::errors_only_does_not_exit_1`
-- [x] 45. Error files incorrectly counted as similarities (compare_file returns None → neither missing nor different, inflates similarities)
-  - Test: `errors::error_file_counted_as_similarity` — documents current behavior
+- [x] 44. Errors-only scenario must trigger exit code 1
+  - Test: `errors::errors_cause_nonzero_exit`
+  - Fix: `has_differences()` now includes `errors > 0`
+- [x] 45. Error files must not be counted as similarities
+  - Test: `errors::error_file_not_counted_as_similarity`
+  - Fix: `similarities` is now an explicit atomic counter incremented only on verified matches, not derived from `original - missing - different`
 
 ### Unreadable directories
 - [x] 46. Unreadable directory in original tree — ERROR on readdir

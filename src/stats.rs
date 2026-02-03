@@ -6,6 +6,7 @@ pub struct Stats {
     backup_items: AtomicU64,
     missing: AtomicU64,
     different: AtomicU64,
+    similarities: AtomicU64,
     extras: AtomicU64,
     skipped: AtomicU64,
     errors: AtomicU64,
@@ -18,6 +19,7 @@ impl Stats {
             backup_items: AtomicU64::new(0),
             missing: AtomicU64::new(0),
             different: AtomicU64::new(0),
+            similarities: AtomicU64::new(0),
             extras: AtomicU64::new(0),
             skipped: AtomicU64::new(0),
             errors: AtomicU64::new(0),
@@ -42,6 +44,10 @@ impl Stats {
 
     pub fn inc_different(&self) {
         self.different.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn inc_similarities(&self) {
+        self.similarities.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn inc_extras(&self) {
@@ -70,7 +76,6 @@ impl Stats {
         } else {
             0.0
         };
-        let similarities = orig.saturating_sub(missing_different);
 
         println!("SUMMARY:");
         println!("    Original items processed: {}", orig);
@@ -80,7 +85,10 @@ impl Stats {
         );
         println!("    Missing/different: {} ({:.2}%)", missing_different, pct);
         println!("    Extras: {}", self.extras.load(Ordering::Relaxed));
-        println!("    Similarities: {}", similarities);
+        println!(
+            "    Similarities: {}",
+            self.similarities.load(Ordering::Relaxed)
+        );
         println!("    Skipped: {}", self.skipped.load(Ordering::Relaxed));
         println!("    Errors: {}", self.errors.load(Ordering::Relaxed));
     }
@@ -89,6 +97,7 @@ impl Stats {
         self.missing.load(Ordering::Relaxed) > 0
             || self.different.load(Ordering::Relaxed) > 0
             || self.extras.load(Ordering::Relaxed) > 0
+            || self.errors.load(Ordering::Relaxed) > 0
     }
 }
 
