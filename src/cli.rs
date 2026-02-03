@@ -5,7 +5,22 @@ use std::path::{Component, PathBuf};
 #[command(
     name = "backup-verify",
     about = "Verify backup integrity by comparing directory trees",
-    arg_required_else_help = true
+    arg_required_else_help = true,
+    after_help = "\
+Output prefixes (grep-friendly):
+  MISSING-FILE:                  File in original missing from backup
+  MISSING-DIR:                   Directory in original missing from backup
+  EXTRA-FILE:                    File in backup not in original
+  EXTRA-DIR:                     Directory in backup not in original
+  DIFFERENT-FILE [reason]:       File differs (reason: SIZE, SAMPLE, HASH, TYPE)
+  DIFFERENT-SYMLINK-TARGET:      Symlink mismatch (different targets or types)
+  NOT_A_FILE_OR_DIR:             Entry is a device, FIFO, socket, etc.
+  SYMLINK:                       Symlink to directory skipped (use --follow)
+  DIFFERENT-FS:                        Different filesystem skipped (--one-filesystem)
+  SKIP:                          Entry skipped via --ignore
+  ERROR:                         I/O or permission error
+  DEBUG:                         Verbose logging (-v dirs, -vv files and hashes)
+  SUMMARY:                       Final counts"
 )]
 pub struct Cli {
     /// Original directory

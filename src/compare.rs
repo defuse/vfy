@@ -165,7 +165,7 @@ fn handle_both_present(
     if orig_is_symlink || backup_is_symlink {
         // One is symlink and the other isn't → mismatch
         if orig_is_symlink != backup_is_symlink {
-            println!("SYMMIS: {} (symlink mismatch)", orig_path.display());
+            println!("DIFFERENT-SYMLINK-TARGET: {} (symlink mismatch)", orig_path.display());
             stats.inc_different();
             return;
         }
@@ -193,7 +193,7 @@ fn handle_both_present(
             (Ok(ot), Ok(bt)) => {
                 if ot != bt {
                     println!(
-                        "SYMMIS: {} (targets differ: {:?} vs {:?})",
+                        "DIFFERENT-SYMLINK-TARGET: {} (targets differ: {:?} vs {:?})",
                         orig_path.display(),
                         ot,
                         bt
@@ -282,7 +282,7 @@ fn handle_both_present(
                 match fs::metadata(parent) {
                     Ok(parent_meta) => {
                         if orig_meta.dev() != parent_meta.dev() {
-                            println!("DIFFFS: {}", orig_path.display());
+                            println!("DIFFERENT-FS: {}", orig_path.display());
                             stats.inc_skipped();
                             return;
                         }

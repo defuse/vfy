@@ -360,7 +360,7 @@ fn ignore_symlink_to_file() {
 
     std::fs::write(a.join("target.txt"), "hello\n").unwrap();
     std::fs::write(b.join("target.txt"), "hello\n").unwrap();
-    // Symlinks with different targets → would normally produce SYMMIS
+    // Symlinks with different targets → would normally produce DIFFERENT-SYMLINK-TARGET
     std::os::unix::fs::symlink("target.txt", a.join("link")).unwrap();
     std::os::unix::fs::symlink("other.txt", b.join("link")).unwrap();
 
@@ -375,9 +375,9 @@ fn ignore_symlink_to_file() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // The symlink should be skipped, not reported as SYMMIS
+    // The symlink should be skipped, not reported as DIFFERENT-SYMLINK-TARGET
     assert!(
-        !some_line_has(&output, "SYMMIS:", "link"),
+        !some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "link"),
         "link should be skipped via --ignore, got:\n{}",
         output
     );

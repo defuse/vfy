@@ -49,7 +49,7 @@ fn symlink_target_mismatch() {
 
     // target_diff: both symlinks but point to different files
     assert!(
-        some_line_has(&output, "SYMMIS:", "target_diff"),
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "target_diff"),
         "Expected SYMMIS for target_diff, got:\n{}",
         output
     );
@@ -67,7 +67,7 @@ fn symlink_type_mismatch() {
 
     // type_mis: symlink in a, regular file in b
     assert!(
-        some_line_has(&output, "SYMMIS:", "type_mis"),
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "type_mis"),
         "Expected SYMMIS for type_mis (symlink vs regular), got:\n{}",
         output
     );
@@ -123,7 +123,7 @@ fn matching_symlinks_are_similar() {
     let output = stdout_of(&assert);
 
     assert!(
-        !output.contains("SYMMIS:"),
+        !output.contains("DIFFERENT-SYMLINK-TARGET:"),
         "Matching symlinks should not produce SYMMIS, got:\n{}",
         output
     );
@@ -182,7 +182,7 @@ fn dangling_symlinks_same_target() {
 
     // Both dangling symlinks point to same target → no SYMMIS
     assert!(
-        !some_line_has(&output, "SYMMIS:", "dangling"),
+        !some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "dangling"),
         "Dangling symlinks with same target should not SYMMIS, got:\n{}",
         output
     );
@@ -197,7 +197,7 @@ fn dangling_symlinks_different_targets() {
     let output = stdout_of(&assert);
 
     assert!(
-        some_line_has(&output, "SYMMIS:", "dangling"),
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "dangling"),
         "Dangling symlinks with different targets should SYMMIS, got:\n{}",
         output
     );
@@ -338,7 +338,7 @@ fn symlinks_one_resolves_to_dir_other_to_file() {
 
     // Different targets → SYMMIS
     assert!(
-        some_line_has(&output, "SYMMIS:", "entry"),
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "entry"),
         "Expected SYMMIS for symlinks with dir vs file targets, got:\n{}",
         output
     );
@@ -403,7 +403,7 @@ fn symlink_same_target_dir_vs_file_no_follow() {
     // But "target" itself exists as a non-symlink entry and will be compared directly
     // (dir vs file type mismatch).
     assert!(
-        !some_line_has(&output, "SYMMIS:", "link"),
+        !some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "link"),
         "Symlinks with same target should not SYMMIS without --follow, got:\n{}",
         output
     );
