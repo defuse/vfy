@@ -11,6 +11,11 @@ use crate::cli::{Config, Verbosity};
 use crate::stats::{DiffReasons, Stats};
 
 pub fn compare_dirs(config: &Config, stats: &Stats) {
+    // Count the root directory as a processed item (both original and backup exist,
+    // validated in main.rs before calling this function).
+    stats.inc_original_items();
+    stats.inc_backup_items();
+    stats.inc_similarities();
     compare_recursive(&config.original, &config.backup, config, stats);
 }
 
@@ -155,6 +160,7 @@ fn handle_both_present(
                     "SYMLINK: {} (symlink to directory, use --follow to traverse)",
                     orig_path.display()
                 );
+                stats.inc_skipped();
             }
             return;
         }
@@ -172,6 +178,21 @@ fn handle_both_present(
                         bt
                     );
                     stats.inc_different();
+                } else if config.follow {
+                    // Targets match, but with --follow we also compare resolved content
+                    let reasons = compare_file(orig_path, backup_path, config, stats);
+                    match reasons {
+                        Some(r) if r.any() => {
+                            println!("DIFFERENT-FILE [{}]: {}", r, orig_path.display());
+                            stats.inc_different();
+                        }
+                        Some(_) => {
+                            stats.inc_similarities();
+                        }
+                        None => {
+                            // Error already reported inside compare_file
+                        }
+                    }
                 } else {
                     stats.inc_similarities();
                 }

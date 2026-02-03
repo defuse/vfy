@@ -17,11 +17,11 @@ fn identical() {
                 .and(predicate::str::contains("EXTRA-DIR").not())
                 .and(predicate::str::contains("DIFFERENT-FILE").not())
                 .and(predicate::str::contains("ERROR").not())
-                .and(predicate::str::contains("Original items processed: 3"))
-                .and(predicate::str::contains("Backup items processed: 3"))
+                .and(predicate::str::contains("Original items processed: 4"))
+                .and(predicate::str::contains("Backup items processed: 4"))
                 .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
                 .and(predicate::str::contains("Extras: 0"))
-                .and(predicate::str::contains("Similarities: 3"))
+                .and(predicate::str::contains("Similarities: 4"))
                 .and(predicate::str::contains("Skipped: 0"))
                 .and(predicate::str::contains("Errors: 0")),
         );
@@ -44,11 +44,11 @@ fn missing_file() {
         "exists.txt must not appear on a MISSING-FILE: line"
     );
 
-    assert!(output.contains("Original items processed: 2"));
-    assert!(output.contains("Backup items processed: 1"));
-    assert!(output.contains("Missing/different: 1 (50.00%)"));
+    assert!(output.contains("Original items processed: 3"));
+    assert!(output.contains("Backup items processed: 2"));
+    assert!(output.contains("Missing/different: 1 (33.33%)"));
     assert!(output.contains("Extras: 0"));
-    assert!(output.contains("Similarities: 1"));
+    assert!(output.contains("Similarities: 2"));
 }
 
 #[test]
@@ -65,11 +65,11 @@ fn extras() {
                 .and(predicate::str::contains("extra_dir"))
                 .and(predicate::str::contains("MISSING-FILE").not())
                 .and(predicate::str::contains("DIFFERENT-FILE").not())
-                .and(predicate::str::contains("Original items processed: 1"))
-                .and(predicate::str::contains("Backup items processed: 4"))
+                .and(predicate::str::contains("Original items processed: 2"))
+                .and(predicate::str::contains("Backup items processed: 5"))
                 .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
                 .and(predicate::str::contains("Extras: 3"))
-                .and(predicate::str::contains("Similarities: 1")),
+                .and(predicate::str::contains("Similarities: 2")),
         );
 }
 
@@ -83,9 +83,9 @@ fn different_size() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [SIZE]:")
                 .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Original items processed: 1"))
-                .and(predicate::str::contains("Missing/different: 1 (100.00%)"))
-                .and(predicate::str::contains("Similarities: 0")),
+                .and(predicate::str::contains("Original items processed: 2"))
+                .and(predicate::str::contains("Missing/different: 1 (50.00%)"))
+                .and(predicate::str::contains("Similarities: 1")),
         );
 }
 
@@ -100,7 +100,7 @@ fn different_content_no_check() {
             predicate::str::contains("DIFFERENT-FILE")
                 .not()
                 .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
-                .and(predicate::str::contains("Similarities: 1")),
+                .and(predicate::str::contains("Similarities: 2")),
         );
 }
 
@@ -114,8 +114,8 @@ fn different_content_hash() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [HASH]:")
                 .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing/different: 1 (100.00%)"))
-                .and(predicate::str::contains("Similarities: 0")),
+                .and(predicate::str::contains("Missing/different: 1 (50.00%)"))
+                .and(predicate::str::contains("Similarities: 1")),
         );
 }
 
@@ -129,8 +129,8 @@ fn different_content_sample() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [SAMPLE]:")
                 .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing/different: 1 (100.00%)"))
-                .and(predicate::str::contains("Similarities: 0")),
+                .and(predicate::str::contains("Missing/different: 1 (50.00%)"))
+                .and(predicate::str::contains("Similarities: 1")),
         );
 }
 
@@ -144,7 +144,7 @@ fn different_size_and_hash() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [SIZE, HASH]:")
                 .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing/different: 1 (100.00%)")),
+                .and(predicate::str::contains("Missing/different: 1 (50.00%)")),
         );
 }
 
@@ -162,11 +162,11 @@ fn nested() {
     assert!(!some_line_has(&output, "MISSING-FILE:", "deep/file.txt"));
     assert!(!some_line_has(&output, "EXTRA-FILE:", "sub2"));
 
-    assert!(output.contains("Original items processed: 6"));
-    assert!(output.contains("Backup items processed: 4"));
-    assert!(output.contains("Missing/different: 4 (66.67%)"));
+    assert!(output.contains("Original items processed: 7"));
+    assert!(output.contains("Backup items processed: 5"));
+    assert!(output.contains("Missing/different: 4 (57.14%)"));
     assert!(output.contains("Extras: 2"));
-    assert!(output.contains("Similarities: 2"));
+    assert!(output.contains("Similarities: 3"));
 }
 
 #[test]
@@ -187,8 +187,8 @@ fn nested_vv() {
         .any(|l| l.contains("EXTRA-FILE:") && l.contains("sub2") && l.contains("extra.txt")));
 
     // Summary counts unchanged by verbosity
-    assert!(output.contains("Original items processed: 6"));
-    assert!(output.contains("Missing/different: 4 (66.67%)"));
+    assert!(output.contains("Original items processed: 7"));
+    assert!(output.contains("Missing/different: 4 (57.14%)"));
     assert!(output.contains("Extras: 2"));
-    assert!(output.contains("Similarities: 2"));
+    assert!(output.contains("Similarities: 3"));
 }

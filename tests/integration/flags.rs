@@ -14,7 +14,7 @@ fn verbose_dirs_only() {
         !output.contains("DEBUG: Comparing file"),
         "File-level DEBUG requires -vv"
     );
-    assert!(output.contains("Similarities: 3"));
+    assert!(output.contains("Similarities: 4"));
 }
 
 #[test]
@@ -24,7 +24,7 @@ fn verbose_files() {
     let output = stdout_of(&assert);
 
     assert!(output.contains("DEBUG: Comparing file"));
-    assert!(output.contains("Similarities: 3"));
+    assert!(output.contains("Similarities: 4"));
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn verbose_blake3_known_hashes() {
     });
     assert!(has_valid_format, "BLAKE3 lines must contain 64-char hex");
 
-    assert!(output.contains("Similarities: 3"));
+    assert!(output.contains("Similarities: 4"));
 }
 
 // ── --all and -s combinations ────────────────────────────────
@@ -77,7 +77,7 @@ fn sample_and_hash_combined() {
         .code(1)
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [SAMPLE, HASH]:")
-                .and(predicate::str::contains("Missing/different: 1 (100.00%)")),
+                .and(predicate::str::contains("Missing/different: 1 (50.00%)")),
         );
 }
 
@@ -91,7 +91,7 @@ fn sample_on_identical_content() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE")
                 .not()
-                .and(predicate::str::contains("Similarities: 3")),
+                .and(predicate::str::contains("Similarities: 4")),
         );
 }
 
@@ -159,11 +159,11 @@ fn ignore_works_in_original_tree() {
         output
     );
     // sub3/ had 3 missing items (sub3/ + deep/ + file.txt); ignoring it should reduce counts
-    // Original: sub1/ + ok.txt + missing.txt = 3 (sub3 skipped)
+    // Original: root + sub1/ + ok.txt + missing.txt = 4 (sub3 skipped)
     // Missing: missing.txt = 1
     assert!(
-        output.contains("Original items processed: 3"),
-        "Expected 3 original items with sub3 ignored, got:\n{}",
+        output.contains("Original items processed: 4"),
+        "Expected 4 original items with sub3 ignored, got:\n{}",
         output
     );
 }
@@ -194,9 +194,9 @@ fn ignore_a_file_not_directory() {
         "Expected Skipped: 1, got:\n{}",
         output
     );
-    // Only exists.txt remains as an original item
+    // Root dir + exists.txt remain as original items
     assert!(
-        output.contains("Original items processed: 1"),
+        output.contains("Original items processed: 2"),
         "got:\n{}",
         output
     );

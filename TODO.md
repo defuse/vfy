@@ -149,3 +149,21 @@
 ### Zero originals with extras
 - [x] 50. Extras with zero original items — percentage 0.00% but exit code 1
   - Test: `edge_cases::extras_with_zero_originals`
+
+## Ruby Divergence Fixes (Round 4)
+
+### Root directory counting
+- [x] 51. Root directory must be counted as a processed item (original + backup + similarity)
+  - Fix: `compare_dirs` now increments `original_items`, `backup_items`, and `similarities` before recursing
+  - Updated all 28+ tests with count assertions
+
+### Symlink-to-dir skipped count
+- [x] 52. Symlink-to-dir without `--follow` must increment skipped counter
+  - Fix: added `stats.inc_skipped()` in the SYMLINK: branch of `handle_both_present`
+  - Test: `symlinks::symlink_dir_no_follow` now asserts `Skipped: 1`
+
+### File symlinks with --follow
+- [x] 53. File symlinks with `--follow` must compare resolved content (not just target paths)
+  - Without `--follow`: matching targets count as similarity (target-only check)
+  - With `--follow`: matching targets also compare resolved file content via `compare_file`
+  - Tests: `symlinks::file_symlink_with_follow_compares_content`, `symlinks::file_symlink_without_follow_checks_target_only`

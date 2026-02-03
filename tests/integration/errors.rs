@@ -100,13 +100,13 @@ fn type_mismatch_summary() {
     let assert = cmd().args([&a, &b]).assert().code(1);
     let output = stdout_of(&assert);
 
-    // a/ has: name_a/ (dir), name_b (file), same.txt (file) = 3 items
-    // All 3 exist in backup
+    // a/ has: root + name_a/ (dir), name_b (file), same.txt (file) = 4 items
+    // All 4 exist in backup (root always matches)
     // name_a: TYPE mismatch (different), name_b: TYPE mismatch (different), same.txt: match
-    assert!(output.contains("Original items processed: 3"), "got:\n{}", output);
-    assert!(output.contains("Backup items processed: 3"), "got:\n{}", output);
+    assert!(output.contains("Original items processed: 4"), "got:\n{}", output);
+    assert!(output.contains("Backup items processed: 4"), "got:\n{}", output);
     assert!(output.contains("Missing/different: 2"), "got:\n{}", output);
-    assert!(output.contains("Similarities: 1"), "got:\n{}", output);
+    assert!(output.contains("Similarities: 2"), "got:\n{}", output);
 }
 
 // ── CLI validation ───────────────────────────────────────────
@@ -184,16 +184,16 @@ fn error_file_not_counted_as_similarity() {
     let output = stdout_of(&assert);
     teardown_unreadable_file();
 
-    // 2 original items: file.txt + noperm.txt
+    // 3 original items: root + file.txt + noperm.txt
     // noperm.txt errors → not a similarity
-    // file.txt matches → 1 similarity
+    // root + file.txt match → 2 similarities
     assert!(
-        output.contains("Original items processed: 2"),
+        output.contains("Original items processed: 3"),
         "got:\n{}",
         output
     );
     assert!(
-        output.contains("Similarities: 1"),
+        output.contains("Similarities: 2"),
         "Errored file should not count as similarity, got:\n{}",
         output
     );

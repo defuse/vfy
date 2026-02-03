@@ -20,11 +20,11 @@ fn empty_directories() {
         .assert()
         .success()
         .stdout(
-            predicate::str::contains("Original items processed: 0")
-                .and(predicate::str::contains("Backup items processed: 0"))
+            predicate::str::contains("Original items processed: 1")
+                .and(predicate::str::contains("Backup items processed: 1"))
                 .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
                 .and(predicate::str::contains("Extras: 0"))
-                .and(predicate::str::contains("Similarities: 0"))
+                .and(predicate::str::contains("Similarities: 1"))
                 .and(predicate::str::contains("Errors: 0")),
         );
 }
@@ -82,7 +82,7 @@ fn zero_byte_files_with_all() {
         "Empty files should match, got:\n{}",
         output
     );
-    assert!(output.contains("Similarities: 1"), "got:\n{}", output);
+    assert!(output.contains("Similarities: 2"), "got:\n{}", output);
     assert!(output.contains("Errors: 0"), "got:\n{}", output);
 
     // Verify the known BLAKE3 hash of empty input
@@ -105,7 +105,7 @@ fn zero_byte_files_with_sampling() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE")
                 .not()
-                .and(predicate::str::contains("Similarities: 1"))
+                .and(predicate::str::contains("Similarities: 2"))
                 .and(predicate::str::contains("Errors: 0")),
         );
 }
@@ -128,7 +128,7 @@ fn extras_with_zero_originals() {
     let output = stdout_of(&assert);
 
     assert!(
-        output.contains("Original items processed: 0"),
+        output.contains("Original items processed: 1"),
         "got:\n{}",
         output
     );
@@ -172,14 +172,14 @@ fn mixed_results_per_file() {
         output
     );
 
-    // Summary: 3 items, 2 different, 1 similarity
+    // Summary: 4 items (root + 3), 2 different, 2 similarities (root + match.txt)
     assert!(
-        output.contains("Original items processed: 3"),
+        output.contains("Original items processed: 4"),
         "got:\n{}",
         output
     );
     assert!(
-        output.contains("Backup items processed: 3"),
+        output.contains("Backup items processed: 4"),
         "got:\n{}",
         output
     );
@@ -188,7 +188,7 @@ fn mixed_results_per_file() {
         "got:\n{}",
         output
     );
-    assert!(output.contains("Similarities: 1"), "got:\n{}", output);
+    assert!(output.contains("Similarities: 2"), "got:\n{}", output);
 }
 
 // ── Deeply nested identical trees ───────────────────────────
@@ -206,10 +206,10 @@ fn deep_identical_tree() {
                 .and(predicate::str::contains("MISSING").not())
                 .and(predicate::str::contains("EXTRA").not())
                 .and(predicate::str::contains("ERROR").not())
-                // l1/ + l2/ + l3/ + deep.txt + mid.txt + top.txt = 6
-                .and(predicate::str::contains("Original items processed: 6"))
-                .and(predicate::str::contains("Backup items processed: 6"))
-                .and(predicate::str::contains("Similarities: 6"))
+                // root + l1/ + l2/ + l3/ + deep.txt + mid.txt + top.txt = 7
+                .and(predicate::str::contains("Original items processed: 7"))
+                .and(predicate::str::contains("Backup items processed: 7"))
+                .and(predicate::str::contains("Similarities: 7"))
                 .and(predicate::str::contains("Errors: 0")),
         );
 }
