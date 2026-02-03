@@ -99,3 +99,51 @@
   - Consolidated into `errors::unreadable_file_reports_error_not_diff`
 - [x] 34. Merge `test_missing_file_no_false_positive` per-line check into `test_missing_file`
   - Consolidated into `basic::missing_file`
+
+## Edge Case Coverage (Round 3)
+
+### Zero-byte files
+- [x] 35. Zero-byte files with `--all` — two identical empty files should pass, verify known BLAKE3 hash of empty input
+  - Test: `edge_cases::zero_byte_files_with_all`
+- [x] 36. Zero-byte files with `-s` — sampling skipped for empty files, should pass cleanly
+  - Test: `edge_cases::zero_byte_files_with_sampling`
+
+### Symlink edge cases (additional)
+- [x] 37. Matching symlinks — both point to the same target, should count as similarity (not SYMMIS)
+  - Test: `symlinks::matching_symlinks_are_similar`
+- [x] 38. Symlink-to-dir with `--follow` when contents differ — traversal finds differences inside
+  - Test: `symlinks::symlink_follow_finds_differences`
+- [x] 39. Dangling symlinks — symlink target doesn't exist on one or both sides
+  - Tests: `symlinks::dangling_symlinks_same_target`, `symlinks::dangling_symlinks_different_targets`
+- [x] 40. Extra symlink in backup (not in original) — reported as EXTRA-FILE (symlink_metadata.is_dir() is false for symlinks)
+  - Test: `symlinks::extra_symlink_in_backup`
+
+### --ignore edge cases
+- [x] 41. `--ignore` on a file (not a directory)
+  - Test: `flags::ignore_a_file_not_directory`
+- [x] 42. Multiple `--ignore` flags (`-i path1 -i path2`)
+  - Test: `flags::ignore_multiple_paths`
+- [x] 43. `--all` combined with `--ignore` — ignored entries are not hashed
+  - Test: `flags::all_with_ignore_skips_hashing`
+
+### Exit code / error counting
+- [x] 44. Errors-only scenario does NOT trigger exit code 1 (has_differences doesn't check errors)
+  - Test: `errors::errors_only_does_not_exit_1`
+- [x] 45. Error files incorrectly counted as similarities (compare_file returns None → neither missing nor different, inflates similarities)
+  - Test: `errors::error_file_counted_as_similarity` — documents current behavior
+
+### Unreadable directories
+- [x] 46. Unreadable directory in original tree — ERROR on readdir
+  - Test: `errors::unreadable_directory_in_original` (uses temp dir for isolation)
+- [x] 47. Unreadable directory in backup tree — ERROR on readdir
+  - Test: `errors::unreadable_directory_in_backup` (uses temp dir for isolation)
+
+### Mixed results and deeper nesting
+- [x] 48. Multiple files with mixed results in one directory — some match, some differ by size, some by content
+  - Test: `edge_cases::mixed_results_per_file`
+- [x] 49. Deeply nested identical trees (3+ levels) — verify recursive traversal works for happy path
+  - Test: `edge_cases::deep_identical_tree`
+
+### Zero originals with extras
+- [x] 50. Extras with zero original items — percentage 0.00% but exit code 1
+  - Test: `edge_cases::extras_with_zero_originals`

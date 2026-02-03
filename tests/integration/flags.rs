@@ -167,3 +167,107 @@ fn ignore_works_in_original_tree() {
         output
     );
 }
+
+#[test]
+fn ignore_a_file_not_directory() {
+    // --ignore on a specific file (not a directory)
+    let (a, b) = testdata("missing");
+    let base = testdata_base("missing");
+    let ignore_path = base
+        .join("a")
+        .join("also_here.txt")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
+    let output = stdout_of(&assert);
+
+    // also_here.txt should be skipped, not reported as MISSING-FILE
+    assert!(
+        !some_line_has(&output, "MISSING-FILE:", "also_here.txt"),
+        "also_here.txt should be skipped via --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+    // Only exists.txt remains as an original item
+    assert!(
+        output.contains("Original items processed: 1"),
+        "got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_multiple_paths() {
+    // -i path1 -i path2
+    let (a, b) = testdata("nested");
+    let base = testdata_base("nested");
+    let ignore1 = base
+        .join("a")
+        .join("sub3")
+        .to_str()
+        .unwrap()
+        .to_string();
+    let ignore2 = base
+        .join("b")
+        .join("sub2")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let assert = cmd()
+        .args([&a, &b, "-i", &ignore1, "-i", &ignore2])
+        .assert();
+    let output = stdout_of(&assert);
+
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "sub3"),
+        "sub3 should be skipped, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "EXTRA-DIR:", "sub2"),
+        "sub2 should be skipped, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 2"),
+        "Expected Skipped: 2, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn all_with_ignore_skips_hashing() {
+    // --all combined with --ignore: ignored entries should not produce BLAKE3 lines
+    let (a, b) = testdata("nested");
+    let base = testdata_base("nested");
+    let ignore_path = base
+        .join("a")
+        .join("sub3")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let assert = cmd()
+        .args([&a, &b, "--all", "-v", "-v", "-i", &ignore_path])
+        .assert();
+    let output = stdout_of(&assert);
+
+    // sub3 should not appear in any BLAKE3 line
+    assert!(
+        !some_line_has(&output, "BLAKE3", "sub3"),
+        "sub3 should be skipped, no BLAKE3 hashing, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("SKIP:"),
+        "Expected SKIP: for ignored path, got:\n{}",
+        output
+    );
+}

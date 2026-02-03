@@ -1,4 +1,4 @@
-use super::{cmd, stdout_of, testdata, testdata_base};
+use super::{cmd, some_line_has, stdout_of, testdata, testdata_base};
 use predicates::prelude::*;
 
 #[test]
@@ -66,4 +66,150 @@ fn output_is_sorted() {
         alpha_pos < bravo_pos,
         "alpha.txt should appear before bravo.txt in sorted output"
     );
+}
+
+// ── Zero-byte files ─────────────────────────────────────────
+
+#[test]
+fn zero_byte_files_with_all() {
+    let (a, b) = testdata("empty_files");
+    let assert = cmd().args([&a, &b, "--all", "-v", "-v"]).assert().success();
+    let output = stdout_of(&assert);
+
+    // Two identical empty files should match
+    assert!(
+        !output.contains("DIFFERENT-FILE"),
+        "Empty files should match, got:\n{}",
+        output
+    );
+    assert!(output.contains("Similarities: 1"), "got:\n{}", output);
+    assert!(output.contains("Errors: 0"), "got:\n{}", output);
+
+    // Verify the known BLAKE3 hash of empty input
+    // BLAKE3("") = af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+    let empty_hash = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262";
+    assert!(
+        some_line_has(&output, "BLAKE3", empty_hash),
+        "Expected known BLAKE3 hash for empty file, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn zero_byte_files_with_sampling() {
+    let (a, b) = testdata("empty_files");
+    cmd()
+        .args([&a, &b, "-s", "10"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("DIFFERENT-FILE")
+                .not()
+                .and(predicate::str::contains("Similarities: 1"))
+                .and(predicate::str::contains("Errors: 0")),
+        );
+}
+
+// ── Extras with zero original items ─────────────────────────
+
+#[test]
+fn extras_with_zero_originals() {
+    // a/ is empty, b/ has files → percentage 0.00% but exit 1 due to extras
+    let base = testdata_base("extras_only");
+    let a = base.join("a");
+    let b = base.join("b");
+    // Ensure empty dir exists (git can't track empty dirs)
+    std::fs::create_dir_all(&a).unwrap();
+    let _ = std::fs::remove_file(a.join(".gitkeep"));
+
+    let a = a.to_str().unwrap().to_string();
+    let b = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a, &b]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    assert!(
+        output.contains("Original items processed: 0"),
+        "got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Missing/different: 0 (0.00%)"),
+        "got:\n{}",
+        output
+    );
+    assert!(output.contains("Extras: 3"), "got:\n{}", output);
+}
+
+// ── Mixed results in one directory ──────────────────────────
+
+#[test]
+fn mixed_results_per_file() {
+    let (a, b) = testdata("mixed_results");
+    let assert = cmd().args([&a, &b, "-s", "10", "--all"]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    // match.txt should not appear as DIFFERENT-FILE
+    assert!(
+        !some_line_has(&output, "DIFFERENT-FILE", "match.txt"),
+        "match.txt should not differ, got:\n{}",
+        output
+    );
+    // size_diff.txt should differ by SIZE
+    assert!(
+        some_line_has(&output, "DIFFERENT-FILE", "size_diff.txt"),
+        "Expected DIFFERENT-FILE for size_diff.txt, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "SIZE", "size_diff.txt"),
+        "Expected SIZE reason for size_diff.txt, got:\n{}",
+        output
+    );
+    // content_diff.txt should differ by SAMPLE and/or HASH
+    assert!(
+        some_line_has(&output, "DIFFERENT-FILE", "content_diff.txt"),
+        "Expected DIFFERENT-FILE for content_diff.txt, got:\n{}",
+        output
+    );
+
+    // Summary: 3 items, 2 different, 1 similarity
+    assert!(
+        output.contains("Original items processed: 3"),
+        "got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Backup items processed: 3"),
+        "got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Missing/different: 2"),
+        "got:\n{}",
+        output
+    );
+    assert!(output.contains("Similarities: 1"), "got:\n{}", output);
+}
+
+// ── Deeply nested identical trees ───────────────────────────
+
+#[test]
+fn deep_identical_tree() {
+    let (a, b) = testdata("deep_identical");
+    cmd()
+        .args([&a, &b, "--all"])
+        .assert()
+        .success()
+        .stdout(
+            predicate::str::contains("DIFFERENT-FILE")
+                .not()
+                .and(predicate::str::contains("MISSING").not())
+                .and(predicate::str::contains("EXTRA").not())
+                .and(predicate::str::contains("ERROR").not())
+                // l1/ + l2/ + l3/ + deep.txt + mid.txt + top.txt = 6
+                .and(predicate::str::contains("Original items processed: 6"))
+                .and(predicate::str::contains("Backup items processed: 6"))
+                .and(predicate::str::contains("Similarities: 6"))
+                .and(predicate::str::contains("Errors: 0")),
+        );
 }
