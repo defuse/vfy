@@ -44,7 +44,7 @@ fn compare_recursive(orig_dir: &Path, backup_dir: &Path, config: &Config, stats:
         }
     };
 
-    let backup_set: HashSet<OsString> = backup_entries.iter().cloned().collect();
+    let mut backup_set: HashSet<OsString> = backup_entries.iter().cloned().collect();
 
     let mut orig_entries = orig_entries;
     orig_entries.sort();
@@ -52,6 +52,17 @@ fn compare_recursive(orig_dir: &Path, backup_dir: &Path, config: &Config, stats:
     for name in &orig_entries {
         let orig_path = orig_dir.join(name);
         let backup_path = backup_dir.join(name);
+
+        // Check ignore list at the entry level (catches missing/extra dirs too)
+        if config.ignore.iter().any(|ig| ig == &orig_path || ig == &backup_path) {
+            println!("SKIP: {}", orig_path.display());
+            stats.inc_skipped();
+            if backup_set.contains(name) {
+                // Remove from backup_set so it's not counted as an extra
+                backup_set.remove(name);
+            }
+            continue;
+        }
 
         stats.inc_original_items();
 

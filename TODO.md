@@ -51,34 +51,51 @@
 ## Integration Test Coverage Gaps
 
 ### CLI / startup validation
-- [ ] 19. Original path doesn't exist → exit 2
-- [ ] 20. Original path is a file, not a directory → exit 2
-- [ ] 21. Same directory warning on stderr
+- [x] 19. Original path doesn't exist → exit 2
+  - Test: `errors::nonexistent_original_exits_2`
+- [x] 20. Original path is a file, not a directory → exit 2
+  - Test: `errors::original_is_file_not_dir`
+- [x] 21. Same directory warning on stderr
+  - Test: `edge_cases::same_directory_warning`
 
 ### Symlink edge cases
-- [ ] 22. Symlink target mismatch → SYMMIS (targets differ)
-- [ ] 23. Symlink type mismatch (one symlink, one not) → SYMMIS (symlink mismatch)
-- [ ] 24. Missing symlink (in original, absent from backup) → MISSING-FILE
+- [x] 22. Symlink target mismatch → SYMMIS (targets differ)
+  - Test: `symlinks::symlink_target_mismatch`
+- [x] 23. Symlink type mismatch (one symlink, one not) → SYMMIS (symlink mismatch)
+  - Test: `symlinks::symlink_type_mismatch`
+- [x] 24. Missing symlink (in original, absent from backup) → MISSING-FILE
+  - Test: `symlinks::symlink_missing_from_backup`
 
 ### File type mismatch
-- [ ] 25. Dir in original, file with same name in backup → DIFFERENT-FILE [TYPE] (dir vs file)
-- [ ] 26. File in original, dir with same name in backup → DIFFERENT-FILE [TYPE] (file vs dir)
+- [x] 25. Dir in original, file with same name in backup → DIFFERENT-FILE [TYPE] (dir vs file)
+  - Test: `errors::dir_in_original_file_in_backup`
+- [x] 26. File in original, dir with same name in backup → DIFFERENT-FILE [TYPE] (file vs dir)
+  - Test: `errors::file_in_original_dir_in_backup`
 
 ### --ignore in original tree
-- [ ] 27. Ignore a subdirectory of the original tree → SKIP, correct counts
+- [x] 27. Ignore a subdirectory of the original tree → SKIP, correct counts
+  - Test: `flags::ignore_works_in_original_tree`
+  - Fix: added entry-level ignore checking in `compare_recursive` loop
 
 ### Empty directories
-- [ ] 28. Two empty directories → exit 0, 0 items, 0.00%
+- [x] 28. Two empty directories → exit 0, 0 items, 0.00%
+  - Test: `edge_cases::empty_directories` (creates empty dirs at runtime since git can't track them)
 
 ### Flag combinations
-- [ ] 29. `-s` and `--all` together on different content → DIFFERENT-FILE [SAMPLE, HASH]
-- [ ] 30. `-s` on identical content → exit 0, no differences
+- [x] 29. `-s` and `--all` together on different content → DIFFERENT-FILE [SAMPLE, HASH]
+  - Test: `flags::sample_and_hash_combined`
+- [x] 30. `-s` on identical content → exit 0, no differences
+  - Test: `flags::sample_on_identical_content`
 
 ### Deterministic output
-- [ ] 31. Output lines for same-level entries appear in sorted order
+- [x] 31. Output lines for same-level entries appear in sorted order
+  - Test: `edge_cases::output_is_sorted`
 
 ## Test Suite Consolidation
 
-- [ ] 32. Merge `test_verbose_hashes` into `test_blake3_known_hash_values`
-- [ ] 33. Merge `test_errors_on_stdout` into `test_unreadable_file_reports_error`
-- [ ] 34. Merge `test_missing_file_no_false_positive` per-line check into `test_missing_file`
+- [x] 32. Merge `test_verbose_hashes` into `test_blake3_known_hash_values`
+  - Consolidated into `flags::verbose_blake3_known_hashes`
+- [x] 33. Merge `test_errors_on_stdout` into `test_unreadable_file_reports_error`
+  - Consolidated into `errors::unreadable_file_reports_error_not_diff`
+- [x] 34. Merge `test_missing_file_no_false_positive` per-line check into `test_missing_file`
+  - Consolidated into `basic::missing_file`
