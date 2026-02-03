@@ -521,7 +521,12 @@ fn compare_file(orig: &Path, backup: &Path, config: &Config, stats: &Stats) -> O
 
     // BLAKE3 hash check
     if config.all {
-        let orig_hash = match hash_file(orig) {
+        let (orig_result, backup_result) = rayon::join(
+            || hash_file(orig),
+            || hash_file(backup),
+        );
+
+        let orig_hash = match orig_result {
             Ok(h) => h,
             Err(e) => {
                 println!("ERROR: Cannot hash {}: {}", orig.display(), e);
@@ -529,7 +534,7 @@ fn compare_file(orig: &Path, backup: &Path, config: &Config, stats: &Stats) -> O
                 return None;
             }
         };
-        let backup_hash = match hash_file(backup) {
+        let backup_hash = match backup_result {
             Ok(h) => h,
             Err(e) => {
                 println!("ERROR: Cannot hash {}: {}", backup.display(), e);
@@ -539,8 +544,8 @@ fn compare_file(orig: &Path, backup: &Path, config: &Config, stats: &Stats) -> O
         };
 
         if config.verbosity >= Verbosity::Files {
-            println!("DEBUG: BLAKE3 {} {}", orig_hash, orig.display());
-            println!("DEBUG: BLAKE3 {} {}", backup_hash, backup.display());
+            println!("DEBUG: BLAKE3 {} {}", orig_hash.to_hex(), orig.display());
+            println!("DEBUG: BLAKE3 {} {}", backup_hash.to_hex(), backup.display());
         }
 
         if orig_hash != backup_hash {
@@ -568,16 +573,8 @@ fn read_sample(path: &Path, offset: u64, len: usize) -> std::io::Result<Vec<u8>>
     Ok(buf)
 }
 
-fn hash_file(path: &Path) -> std::io::Result<String> {
+fn hash_file(path: &Path) -> std::io::Result<blake3::Hash> {
     let mut hasher = blake3::Hasher::new();
-    let mut file = fs::File::open(path)?;
-    let mut buf = [0u8; 65536];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(hasher.finalize().to_hex().to_string())
+    hasher.update_mmap_rayon(path)?;
+    Ok(hasher.finalize())
 }

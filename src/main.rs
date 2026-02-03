@@ -12,6 +12,17 @@ use cli::{Cli, Config};
 use stats::Stats;
 
 fn main() {
+    let cmd: Vec<String> = std::env::args()
+        .map(|a| {
+            if a.contains(|c: char| c.is_whitespace() || "\"'\\$`!#&|;(){}[]<>?*~".contains(c)) {
+                format!("'{}'", a.replace('\'', "'\\''"))
+            } else {
+                a
+            }
+        })
+        .collect();
+    println!("CMD: {}", cmd.join(" "));
+
     let cli = Cli::parse();
 
     let config = match Config::from_cli(cli) {

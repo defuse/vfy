@@ -7,7 +7,7 @@ mod symlinks;
 use assert_cmd::Command;
 
 pub fn cmd() -> Command {
-    Command::cargo_bin("backup-verify").unwrap()
+    Command::cargo_bin("vfy").unwrap()
 }
 
 pub fn testdata(scenario: &str) -> (String, String) {

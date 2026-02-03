@@ -1,7 +1,7 @@
 This is a tool for verifying your backups completed successfully.
 
 ```
-Usage: backup-verify [OPTIONS] <ORIGINAL> <BACKUP>
+Usage: vfy [OPTIONS] <ORIGINAL> <BACKUP>
 
 Arguments:
   <ORIGINAL>  Original directory

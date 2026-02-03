@@ -1,6 +1,160 @@
 use super::{cmd, some_line_has, stdout_of, testdata, testdata_base};
 use predicates::prelude::*;
 
+// ── CMD line output ─────────────────────────────────────────
+
+#[test]
+fn cmd_line_printed_no_flags() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().expect("expected CMD: line");
+    assert!(cmd_line.starts_with("CMD: "), "first line should be CMD:, got: {}", cmd_line);
+    assert!(cmd_line.contains(&a), "CMD should contain original path");
+    assert!(cmd_line.contains(&b), "CMD should contain backup path");
+}
+
+#[test]
+fn cmd_line_includes_all_flag() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b, "--all"]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.contains("--all"), "CMD should contain --all, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_includes_short_a_flag() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b, "-a"]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.contains("-a"), "CMD should contain -a, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_includes_verbose_flags() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b, "-v", "-v"]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.contains("-v"), "CMD should contain -v, got: {}", cmd_line);
+    // Should have two -v flags
+    let v_count = cmd_line.split_whitespace().filter(|&w| w == "-v").count();
+    assert_eq!(v_count, 2, "CMD should contain two -v flags, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_includes_samples_flag() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b, "-s", "5"]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.contains("-s") || cmd_line.contains("--samples"),
+        "CMD should contain -s or --samples, got: {}", cmd_line);
+    assert!(cmd_line.contains("5"), "CMD should contain sample count 5, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_includes_follow_flag() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b, "--follow"]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.contains("--follow"), "CMD should contain --follow, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_includes_ignore_flag() {
+    let base = testdata_base("nested");
+    let (a, b) = testdata("nested");
+    let ignore_path = base.join("a").join("sub3").to_str().unwrap().to_string();
+    let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.contains("-i") || cmd_line.contains("--ignore"),
+        "CMD should contain -i or --ignore, got: {}", cmd_line);
+    assert!(cmd_line.contains("sub3"), "CMD should contain ignore path, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_includes_one_filesystem_flag() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b, "--one-filesystem"]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.contains("--one-filesystem"),
+        "CMD should contain --one-filesystem, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_includes_multiple_flags() {
+    let (a, b) = testdata("identical");
+    let assert = cmd().args([&a, &b, "-v", "-v", "--all", "-s", "3", "--follow"]).assert().success();
+    let output = stdout_of(&assert);
+    let cmd_line = output.lines().next().unwrap();
+    assert!(cmd_line.starts_with("CMD: "), "first line should be CMD:");
+    assert!(cmd_line.contains("--all"), "CMD should contain --all, got: {}", cmd_line);
+    assert!(cmd_line.contains("--follow"), "CMD should contain --follow, got: {}", cmd_line);
+    assert!(cmd_line.contains("-s"), "CMD should contain -s, got: {}", cmd_line);
+    assert!(cmd_line.contains("3"), "CMD should contain sample count, got: {}", cmd_line);
+    let v_count = cmd_line.split_whitespace().filter(|&w| w == "-v").count();
+    assert_eq!(v_count, 2, "CMD should have two -v flags, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_quotes_paths_with_spaces() {
+    let tmp = std::env::temp_dir().join("bv_test_cmd_spaces");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("orig dir");
+    let b = tmp.join("backup dir");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().success();
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    let cmd_line = output.lines().next().unwrap();
+    // Paths with spaces should be single-quoted
+    let a_quoted = format!("'{}'", a_str);
+    let b_quoted = format!("'{}'", b_str);
+    assert!(cmd_line.contains(&a_quoted),
+        "CMD should quote path with spaces, got: {}", cmd_line);
+    assert!(cmd_line.contains(&b_quoted),
+        "CMD should quote path with spaces, got: {}", cmd_line);
+}
+
+#[test]
+fn cmd_line_escapes_single_quotes_in_paths() {
+    let tmp = std::env::temp_dir().join("bv_test_cmd_quotes");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("it's orig");
+    let b = tmp.join("it's backup");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().success();
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    let cmd_line = output.lines().next().unwrap();
+    // Single quotes in paths should be escaped as '\''
+    assert!(cmd_line.contains("'\\''"),
+        "CMD should escape single quotes with '\\'' idiom, got: {}", cmd_line);
+    // The escaped path should still be parseable — check both dir names appear
+    assert!(cmd_line.contains("it") && cmd_line.contains("s orig"),
+        "CMD should contain original path content, got: {}", cmd_line);
+    assert!(cmd_line.contains("it") && cmd_line.contains("s backup"),
+        "CMD should contain backup path content, got: {}", cmd_line);
+}
+
 // ── Verbosity ────────────────────────────────────────────────
 
 #[test]

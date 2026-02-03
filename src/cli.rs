@@ -3,7 +3,7 @@ use std::path::{Component, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(
-    name = "backup-verify",
+    name = "vfy",
     about = "Verify backup integrity by comparing directory trees",
     arg_required_else_help = true,
     after_help = "\
