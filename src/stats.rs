@@ -8,6 +8,7 @@ pub struct Stats {
     different: AtomicU64,
     similarities: AtomicU64,
     extras: AtomicU64,
+    not_a_file_or_dir: AtomicU64,
     skipped: AtomicU64,
     errors: AtomicU64,
 }
@@ -21,6 +22,7 @@ impl Stats {
             different: AtomicU64::new(0),
             similarities: AtomicU64::new(0),
             extras: AtomicU64::new(0),
+            not_a_file_or_dir: AtomicU64::new(0),
             skipped: AtomicU64::new(0),
             errors: AtomicU64::new(0),
         }
@@ -32,10 +34,6 @@ impl Stats {
 
     pub fn inc_backup_items(&self) {
         self.backup_items.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub fn dec_backup_items(&self) {
-        self.backup_items.fetch_sub(1, Ordering::Relaxed);
     }
 
     pub fn inc_missing(&self) {
@@ -54,8 +52,8 @@ impl Stats {
         self.extras.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn dec_extras(&self) {
-        self.extras.fetch_sub(1, Ordering::Relaxed);
+    pub fn inc_not_a_file_or_dir(&self) {
+        self.not_a_file_or_dir.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn inc_skipped(&self) {
@@ -86,6 +84,10 @@ impl Stats {
         println!("    Missing/different: {} ({:.2}%)", missing_different, pct);
         println!("    Extras: {}", self.extras.load(Ordering::Relaxed));
         println!(
+            "    Not a file or dir: {}",
+            self.not_a_file_or_dir.load(Ordering::Relaxed)
+        );
+        println!(
             "    Similarities: {}",
             self.similarities.load(Ordering::Relaxed)
         );
@@ -97,6 +99,7 @@ impl Stats {
         self.missing.load(Ordering::Relaxed) > 0
             || self.different.load(Ordering::Relaxed) > 0
             || self.extras.load(Ordering::Relaxed) > 0
+            || self.not_a_file_or_dir.load(Ordering::Relaxed) > 0
             || self.errors.load(Ordering::Relaxed) > 0
     }
 }

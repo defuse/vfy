@@ -243,6 +243,275 @@ fn ignore_multiple_paths() {
 }
 
 #[test]
+fn ignore_extra_file_in_backup() {
+    // B1: --ignore on an extra FILE in backup tree should skip it
+    let (a, b) = testdata("extras");
+    let base = testdata_base("extras");
+    let ignore_path = base
+        .join("b")
+        .join("extra.txt")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
+    let output = stdout_of(&assert);
+
+    // extra.txt should be skipped, not reported as EXTRA-FILE
+    assert!(
+        !some_line_has(&output, "EXTRA-FILE:", "extra.txt"),
+        "extra.txt should be skipped via --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "SKIP:", "extra.txt"),
+        "Expected SKIP: for ignored extra.txt, got:\n{}",
+        output
+    );
+    // extra_dir still reported, so Extras: 2 (extra_dir/ + extra_dir/file.txt)
+    assert!(
+        output.contains("Extras: 2"),
+        "Expected Extras: 2 (extra_dir + its file), got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_subdir_inside_missing_dir() {
+    // If sub3/ is missing from backup and sub3/deep/ is ignored,
+    // count_recursive should skip deep/ (SKIP: + skipped count)
+    // but still count sub3/ itself and sub3/deep/file.txt is NOT counted
+    // because its parent dir deep/ is skipped entirely.
+    let (a, b) = testdata("nested");
+    let base = testdata_base("nested");
+    let ignore_path = base
+        .join("a")
+        .join("sub3")
+        .join("deep")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let assert = cmd()
+        .args([&a, &b, "-v", "-v", "-i", &ignore_path])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    // sub3/ itself should be MISSING-DIR (it's not ignored, only deep/ inside it is)
+    assert!(
+        some_line_has(&output, "MISSING-DIR:", "sub3"),
+        "sub3 should be reported as MISSING-DIR, got:\n{}",
+        output
+    );
+    // deep/ should be skipped, not counted as missing
+    assert!(
+        some_line_has(&output, "SKIP:", "deep"),
+        "deep/ should be SKIP'd via --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "deep"),
+        "deep/ should not be MISSING-DIR (it's ignored), got:\n{}",
+        output
+    );
+    // file.txt inside deep/ should NOT appear (parent skipped)
+    assert!(
+        !some_line_has(&output, "MISSING-FILE:", "file.txt"),
+        "file.txt inside ignored deep/ should not appear, got:\n{}",
+        output
+    );
+
+    // Counts: root(1) + sub1(1) + ok.txt(1) + missing.txt(1) + sub3(1) = 5 original
+    // (deep/ and deep/file.txt are NOT counted because deep/ is skipped)
+    assert!(
+        output.contains("Original items processed: 5"),
+        "Expected 5 original items (deep/ skipped), got:\n{}",
+        output
+    );
+    // Missing: missing.txt(1) + sub3(1) = 2
+    assert!(
+        output.contains("Missing/different: 2"),
+        "Expected Missing/different: 2, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1 for ignored deep/, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_symlink_to_file() {
+    // C3: --ignore on a symlink should use the symlink's own path, not the resolved target.
+    // Both sides have a symlink "link" -> "target.txt". Ignoring "link" should skip it.
+    let tmp = std::env::temp_dir().join("bv_test_ignore_symlink_file");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    std::fs::write(a.join("target.txt"), "hello\n").unwrap();
+    std::fs::write(b.join("target.txt"), "hello\n").unwrap();
+    // Symlinks with different targets → would normally produce SYMMIS
+    std::os::unix::fs::symlink("target.txt", a.join("link")).unwrap();
+    std::os::unix::fs::symlink("other.txt", b.join("link")).unwrap();
+
+    let ignore_path = a.join("link").to_str().unwrap().to_string();
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "-i", &ignore_path])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // The symlink should be skipped, not reported as SYMMIS
+    assert!(
+        !some_line_has(&output, "SYMMIS:", "link"),
+        "link should be skipped via --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "SKIP:", "link"),
+        "Expected SKIP: for ignored symlink, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_path_through_symlink_parent() {
+    // C3 regression: if the path to the ignored entry goes through a symlink parent,
+    // canonicalizing the parent resolves the symlink, producing a path that won't
+    // match what compare_recursive builds (which keeps symlink names intact).
+    //
+    // Setup: both sides have symdir -> realdir/ with differing file.txt inside.
+    // With --follow, symdir is traversed. Ignoring symdir/file.txt should skip
+    // the file even though symdir is itself a symlink.
+    // realdir doesn't exist in either tree — only accessed through symdir.
+    let tmp = std::env::temp_dir().join("bv_test_ignore_through_symlink");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    let target_a = tmp.join("real_a");
+    let target_b = tmp.join("real_b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    std::fs::create_dir_all(&target_a).unwrap();
+    std::fs::create_dir_all(&target_b).unwrap();
+
+    std::fs::write(target_a.join("file.txt"), "aaa\n").unwrap();
+    std::fs::write(target_b.join("file.txt"), "bbb\n").unwrap();
+
+    // symdir -> external target dirs (not inside a/ or b/)
+    std::os::unix::fs::symlink(&target_a, a.join("symdir")).unwrap();
+    std::os::unix::fs::symlink(&target_b, b.join("symdir")).unwrap();
+
+    // Ignore file.txt reached through symdir (symlink parent)
+    let ignore_path = a.join("symdir").join("file.txt").to_str().unwrap().to_string();
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow", "--all", "-i", &ignore_path])
+        .assert();
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // file.txt via symdir should be skipped, not reported as DIFFERENT-FILE
+    assert!(
+        !some_line_has(&output, "DIFFERENT-FILE", "file.txt"),
+        "file.txt through symlink parent should be skipped, got:\n{}",
+        output
+    );
+    // The SKIP should show the symdir path, not the resolved path
+    assert!(
+        some_line_has(&output, "SKIP:", "symdir"),
+        "Expected SKIP: with symdir in path, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_symlink_to_dir_with_follow() {
+    // C3: --ignore on a symlink-to-dir with --follow should skip the entire subtree.
+    let tmp = std::env::temp_dir().join("bv_test_ignore_symlink_dir");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    let target_a = tmp.join("real_dir_a");
+    let target_b = tmp.join("real_dir_b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    std::fs::create_dir_all(&target_a).unwrap();
+    std::fs::create_dir_all(&target_b).unwrap();
+
+    std::fs::write(target_a.join("file.txt"), "short\n").unwrap();
+    std::fs::write(target_b.join("file.txt"), "this is longer content\n").unwrap();
+
+    // Both sides have symlink "linked" -> their respective real dirs
+    std::os::unix::fs::symlink(&target_a, a.join("linked")).unwrap();
+    std::os::unix::fs::symlink(&target_b, b.join("linked")).unwrap();
+
+    // Also add a normal matching file so we can verify counts
+    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
+    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
+
+    let ignore_path = a.join("linked").to_str().unwrap().to_string();
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow", "-i", &ignore_path])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // The symlink-to-dir should be skipped entirely, no traversal
+    assert!(
+        !some_line_has(&output, "DIFFERENT-FILE", "file.txt"),
+        "file.txt inside ignored symlink dir should not be compared, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "SKIP:", "linked"),
+        "Expected SKIP: for ignored symlink dir, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+    // root(1) + ok.txt(1) = 2 original items (linked is skipped)
+    assert!(
+        output.contains("Original items processed: 2"),
+        "Expected 2 original items, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Similarities: 2"),
+        "Expected Similarities: 2, got:\n{}",
+        output
+    );
+}
+
+#[test]
 fn all_with_ignore_skips_hashing() {
     // --all combined with --ignore: ignored entries should not produce BLAKE3 lines
     let (a, b) = testdata("nested");

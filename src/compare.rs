@@ -127,14 +127,32 @@ fn handle_both_present(
 
     let backup_is_symlink = backup_meta.file_type().is_symlink();
 
-    // Determine the "resolved" type of each side (following symlinks)
+    // Determine the "resolved" type of each side (following symlinks).
+    // For dangling symlinks (target doesn't exist), treat as non-dir.
+    // For other errors (e.g. permission denied on target), report ERROR.
     let orig_is_dir = if orig_is_symlink {
-        fs::metadata(orig_path).map(|m| m.is_dir()).unwrap_or(false)
+        match fs::metadata(orig_path) {
+            Ok(m) => m.is_dir(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => {
+                println!("ERROR: Cannot resolve symlink {}: {}", orig_path.display(), e);
+                stats.inc_errors();
+                return;
+            }
+        }
     } else {
         orig_meta.is_dir()
     };
     let backup_is_dir = if backup_is_symlink {
-        fs::metadata(backup_path).map(|m| m.is_dir()).unwrap_or(false)
+        match fs::metadata(backup_path) {
+            Ok(m) => m.is_dir(),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            Err(e) => {
+                println!("ERROR: Cannot resolve symlink {}: {}", backup_path.display(), e);
+                stats.inc_errors();
+                return;
+            }
+        }
     } else {
         backup_meta.is_dir()
     };
@@ -179,7 +197,14 @@ fn handle_both_present(
                     );
                     stats.inc_different();
                 } else if config.follow {
-                    // Targets match, but with --follow we also compare resolved content
+                    // Targets match, but with --follow we also compare resolved content.
+                    // First check the resolved target is a regular file (not a device, FIFO, etc.)
+                    let orig_is_file = fs::metadata(orig_path).map(|m| m.is_file()).unwrap_or(false);
+                    if !orig_is_file {
+                        println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
+                        stats.inc_not_a_file_or_dir();
+                        return;
+                    }
                     let reasons = compare_file(orig_path, backup_path, config, stats);
                     match reasons {
                         Some(r) if r.any() => {
@@ -197,8 +222,12 @@ fn handle_both_present(
                     stats.inc_similarities();
                 }
             }
-            _ => {
-                println!("ERROR: Cannot read symlink targets for {}", orig_path.display());
+            (Err(e), _) => {
+                println!("ERROR: Cannot read symlink target for {}: {}", orig_path.display(), e);
+                stats.inc_errors();
+            }
+            (_, Err(e)) => {
+                println!("ERROR: Cannot read symlink target for {}: {}", backup_path.display(), e);
                 stats.inc_errors();
             }
         }
@@ -206,6 +235,15 @@ fn handle_both_present(
     }
 
     // Neither side is a symlink
+    // Check for special file types (socket, FIFO, device, etc.) before dir/file logic
+    let orig_is_regular = orig_meta.is_file() || orig_meta.is_dir();
+    let backup_is_regular = backup_meta.is_file() || backup_meta.is_dir();
+    if !orig_is_regular || !backup_is_regular {
+        println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
+        stats.inc_not_a_file_or_dir();
+        return;
+    }
+
     if orig_meta.is_dir() {
         if !backup_meta.is_dir() {
             println!("DIFFERENT-FILE [TYPE]: {} (dir vs file)", orig_path.display());
@@ -218,10 +256,24 @@ fn handle_both_present(
             #[cfg(unix)]
             {
                 use std::os::unix::fs::MetadataExt;
-                if let Ok(parent_meta) = fs::metadata(orig_path.parent().unwrap_or(orig_path)) {
-                    if orig_meta.dev() != parent_meta.dev() {
-                        println!("DIFFFS: {}", orig_path.display());
-                        stats.inc_skipped();
+                let parent = orig_path
+                    .parent()
+                    .expect("BUG: orig_path inside tree must have a parent");
+                match fs::metadata(parent) {
+                    Ok(parent_meta) => {
+                        if orig_meta.dev() != parent_meta.dev() {
+                            println!("DIFFFS: {}", orig_path.display());
+                            stats.inc_skipped();
+                            return;
+                        }
+                    }
+                    Err(e) => {
+                        println!(
+                            "ERROR: Cannot stat parent directory {}: {}",
+                            parent.display(),
+                            e
+                        );
+                        stats.inc_errors();
                         return;
                     }
                 }
@@ -234,7 +286,8 @@ fn handle_both_present(
 
         stats.inc_similarities();
         compare_recursive(orig_path, backup_path, config, stats);
-    } else if orig_meta.is_file() {
+    } else {
+        // Both are regular files
         if !backup_meta.is_file() {
             println!("DIFFERENT-FILE [TYPE]: {} (file vs dir)", orig_path.display());
             stats.inc_different();
@@ -262,10 +315,6 @@ fn handle_both_present(
                 // Error already reported inside compare_file
             }
         }
-    } else {
-        // Special file type (socket, FIFO, device, etc.)
-        println!("ERROR: Unsupported file type for {}", orig_path.display());
-        stats.inc_errors();
     }
 }
 
@@ -298,19 +347,17 @@ fn handle_extra(backup_path: &Path, config: &Config, stats: &Stats) {
         }
     };
 
+    // Check ignore list before counting
+    if config.ignore.iter().any(|ig| ig == backup_path) {
+        println!("SKIP: {}", backup_path.display());
+        stats.inc_skipped();
+        return;
+    }
+
     stats.inc_backup_items();
     stats.inc_extras();
 
     if meta.is_dir() {
-        // Check ignore list for extra dirs in backup tree
-        if config.ignore.iter().any(|ig| ig == backup_path) {
-            println!("SKIP: {}", backup_path.display());
-            // Undo the extras/backup_items increments since we're skipping
-            stats.dec_extras();
-            stats.dec_backup_items();
-            stats.inc_skipped();
-            return;
-        }
         println!("EXTRA-DIR: {}", backup_path.display());
         count_recursive(backup_path, config, stats, Direction::Extra);
     } else {
@@ -340,6 +387,14 @@ fn count_recursive(dir: &Path, config: &Config, stats: &Stats, direction: Direct
 
     for name in &entries {
         let path = dir.join(name);
+
+        // Check ignore list before counting
+        if config.ignore.iter().any(|ig| ig == &path) {
+            println!("SKIP: {}", path.display());
+            stats.inc_skipped();
+            continue;
+        }
+
         let meta = match fs::symlink_metadata(&path) {
             Ok(m) => m,
             Err(e) => {

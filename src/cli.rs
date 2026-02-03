@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(name = "backup-verify", about = "Verify backup integrity by comparing directory trees")]
@@ -23,7 +23,7 @@ pub struct Cli {
     pub all: bool,
 
     /// Follow symlinks into directories
-    #[arg(long)]
+    #[arg(short, long)]
     pub follow: bool,
 
     /// Stay on one filesystem
@@ -68,12 +68,28 @@ impl Config {
             _ => Verbosity::Files,
         };
 
-        // Validate --ignore paths: must exist and be within original or backup tree
+        // Validate --ignore paths: must exist and be within original or backup tree.
+        // We must NOT resolve symlinks in the path — compare_recursive builds paths
+        // by joining readdir names, so symlink directory names stay unresolved.
+        // Strategy: make the path absolute (prepend cwd if relative), normalize
+        // . and .. components, verify it exists, and check it's within the tree.
         let mut ignore = Vec::new();
         for p in &cli.ignore {
-            let resolved = p.canonicalize().map_err(|e| {
-                format!("Ignore path {:?} does not exist or cannot be resolved: {}", p, e)
-            })?;
+            let abs = if p.is_absolute() {
+                p.clone()
+            } else {
+                std::env::current_dir()
+                    .map_err(|e| format!("Cannot get current directory: {}", e))?
+                    .join(p)
+            };
+            let resolved = normalize_path(&abs);
+            // Verify the entry itself exists (the symlink or file, not its target)
+            if resolved.symlink_metadata().is_err() {
+                return Err(format!(
+                    "Ignore path {:?} does not exist or cannot be resolved: No such file or directory",
+                    p
+                ));
+            }
             if !resolved.starts_with(&original) && !resolved.starts_with(&backup) {
                 return Err(format!(
                     "Ignore path {:?} is not within the original ({:?}) or backup ({:?}) directory",
@@ -99,4 +115,19 @@ impl Config {
             ignore,
         })
     }
+}
+
+/// Make a path absolute and normalize `.` and `..` components without resolving symlinks.
+fn normalize_path(path: &PathBuf) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {} // skip "."
+            Component::ParentDir => {
+                result.pop(); // go up for ".."
+            }
+            other => result.push(other),
+        }
+    }
+    result
 }

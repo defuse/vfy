@@ -1,4 +1,4 @@
-use super::{cmd, some_line_has, stdout_of, testdata, testdata_base};
+use super::{cmd, no_line_has, some_line_has, stdout_of, testdata, testdata_base};
 use predicates::prelude::*;
 
 #[test]
@@ -212,4 +212,215 @@ fn deep_identical_tree() {
                 .and(predicate::str::contains("Similarities: 7"))
                 .and(predicate::str::contains("Errors: 0")),
         );
+}
+
+// ── Special file types ──────────────────────────────────────
+
+#[test]
+fn symlink_to_dev_dir_with_follow() {
+    // Symlink to /dev/ — contains character devices (null, zero, etc.)
+    // With --follow, the tool traverses into /dev/ and should report
+    // NOT_A_FILE_OR_DIR for device files, not ERROR or silent pass.
+    let tmp = std::env::temp_dir().join("bv_test_dev_dir");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Both sides symlink to /dev/
+    std::os::unix::fs::symlink("/dev", a.join("dev")).unwrap();
+    std::os::unix::fs::symlink("/dev", b.join("dev")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow"])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // /dev/ has character devices like null, zero — should trigger NOT_A_FILE_OR_DIR
+    let not_a_file_lines: Vec<&str> = output
+        .lines()
+        .filter(|l| l.contains("NOT_A_FILE_OR_DIR:"))
+        .collect();
+    assert!(
+        !not_a_file_lines.is_empty(),
+        "Expected NOT_A_FILE_OR_DIR for device files in /dev/, got:\n{}",
+        output
+    );
+
+    // /dev/null specifically should be NOT_A_FILE_OR_DIR, not ERROR
+    assert!(
+        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "null"),
+        "Expected NOT_A_FILE_OR_DIR for /dev/null, got:\n{}",
+        output
+    );
+    assert!(
+        no_line_has(&output, "ERROR:", "null"),
+        "/dev/null should be NOT_A_FILE_OR_DIR, not ERROR, got:\n{}",
+        output
+    );
+
+    // Summary should show at least 2 not-a-file-or-dir (/dev/null and /dev/urandom at minimum)
+    let naf_line = output
+        .lines()
+        .find(|l| l.contains("Not a file or dir:"))
+        .expect("Expected 'Not a file or dir' in summary");
+    let naf_count: u64 = naf_line
+        .trim()
+        .rsplit(' ')
+        .next()
+        .unwrap()
+        .parse()
+        .expect("Failed to parse not-a-file-or-dir count");
+    assert!(
+        naf_count >= 2,
+        "Expected at least 2 not-a-file-or-dir entries (null + urandom), got {}",
+        naf_count
+    );
+}
+
+#[test]
+fn special_files_missing_from_backup() {
+    // Both sides have symlink to /dev/ so --follow traverses it.
+    // Remove a device file from b's view by using a real dir with a subset of entries.
+    // Simpler approach: a/ has a real dir with a symlink to a device inside,
+    // b/ has same real dir but missing the device symlink.
+    let tmp = std::env::temp_dir().join("bv_test_dev_missing");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(a.join("sub")).unwrap();
+    std::fs::create_dir_all(b.join("sub")).unwrap();
+
+    // a/sub has a symlink to /dev/null (character device) — missing from b/sub
+    std::os::unix::fs::symlink("/dev/null", a.join("sub/devnull")).unwrap();
+    // Both have a regular file
+    std::fs::write(a.join("sub/ok.txt"), "ok\n").unwrap();
+    std::fs::write(b.join("sub/ok.txt"), "ok\n").unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow"])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // The device symlink is missing from backup — reported as MISSING-FILE
+    assert!(
+        some_line_has(&output, "MISSING-FILE:", "devnull"),
+        "Expected MISSING-FILE for devnull symlink, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Errors: 0"),
+        "Missing special file symlinks should not cause errors, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn special_files_extra_in_backup() {
+    // b/sub has a symlink to /dev/null that a/sub does not — extra
+    let tmp = std::env::temp_dir().join("bv_test_dev_extra");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(a.join("sub")).unwrap();
+    std::fs::create_dir_all(b.join("sub")).unwrap();
+
+    // b/sub has a symlink to /dev/null — extra
+    std::os::unix::fs::symlink("/dev/null", b.join("sub/devnull")).unwrap();
+    // Both have a regular file
+    std::fs::write(a.join("sub/ok.txt"), "ok\n").unwrap();
+    std::fs::write(b.join("sub/ok.txt"), "ok\n").unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow"])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // The device symlink is extra in backup — reported as EXTRA-FILE
+    assert!(
+        some_line_has(&output, "EXTRA-FILE:", "devnull"),
+        "Expected EXTRA-FILE for devnull symlink, got:\n{}",
+        output
+    );
+    assert!(
+        !output.contains("Extras: 0"),
+        "Should have extras, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Errors: 0"),
+        "Extra special file symlinks should not cause errors, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn special_file_via_symlink_follow() {
+    // Symlink to /dev/urandom is a character device (not a file, not a dir).
+    // With --follow, the tool should detect this and report NOT_A_FILE_OR_DIR
+    // instead of trying to compare it as a regular file.
+    let tmp = std::env::temp_dir().join("bv_test_special_file");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Both sides have a symlink to /dev/urandom
+    std::os::unix::fs::symlink("/dev/urandom", a.join("special")).unwrap();
+    std::os::unix::fs::symlink("/dev/urandom", b.join("special")).unwrap();
+
+    // Also add a regular matching file
+    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
+    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow"])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    assert!(
+        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "special"),
+        "Expected NOT_A_FILE_OR_DIR for symlink to /dev/urandom, got:\n{}",
+        output
+    );
+    // Should not be counted as a similarity
+    assert!(
+        output.contains("Similarities: 2"),
+        "Special file should not be a similarity (root + ok.txt only), got:\n{}",
+        output
+    );
+    // Should be counted in the not-a-file-or-dir summary
+    assert!(
+        output.contains("Not a file or dir: 1"),
+        "Expected 'Not a file or dir: 1' in summary, got:\n{}",
+        output
+    );
+    // Should not produce ERROR — this is an expected condition, not an I/O failure
+    assert!(
+        no_line_has(&output, "ERROR:", "special"),
+        "Special file should be NOT_A_FILE_OR_DIR, not ERROR, got:\n{}",
+        output
+    );
 }

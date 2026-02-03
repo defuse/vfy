@@ -42,7 +42,9 @@ fn main() {
     ctrlc::set_handler(move || {
         eprintln!("\nInterrupted!");
         stats_ctrlc.print_summary();
-        let _ = std::io::stdout().flush();
+        if let Err(e) = std::io::stdout().flush() {
+            eprintln!("Warning: failed to flush stdout: {}", e);
+        }
         process::exit(130);
     })
     .expect("Error setting Ctrl-C handler");
