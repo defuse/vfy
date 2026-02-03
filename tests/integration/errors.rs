@@ -100,13 +100,62 @@ fn type_mismatch_summary() {
     let assert = cmd().args([&a, &b]).assert().code(1);
     let output = stdout_of(&assert);
 
-    // a/ has: root + name_a/ (dir), name_b (file), same.txt (file) = 4 items
-    // All 4 exist in backup (root always matches)
-    // name_a: TYPE mismatch (different), name_b: TYPE mismatch (different), same.txt: match
-    assert!(output.contains("Original items processed: 4"), "got:\n{}", output);
-    assert!(output.contains("Backup items processed: 4"), "got:\n{}", output);
-    assert!(output.contains("Missing/different: 2"), "got:\n{}", output);
+    // a/ has: root + name_a/ (dir) + name_a/child.txt + name_b (file) + same.txt = 5 items
+    // b/ has: root + name_a (file) + name_b/ (dir) + name_b/child.txt + same.txt = 5 items
+    // name_a: TYPE mismatch, a/name_a/child.txt is missing from backup
+    // name_b: TYPE mismatch, b/name_b/child.txt is extra in backup
+    assert!(output.contains("Original items processed: 5"), "got:\n{}", output);
+    assert!(output.contains("Backup items processed: 5"), "got:\n{}", output);
+    // Missing/different: name_a (type) + name_a/child.txt (missing) + name_b (type) = 3
+    assert!(output.contains("Missing/different: 3"), "got:\n{}", output);
+    // Extras: name_b/child.txt = 1
+    assert!(output.contains("Extras: 1"), "got:\n{}", output);
+    // Similarities: root + same.txt = 2
     assert!(output.contains("Similarities: 2"), "got:\n{}", output);
+}
+
+#[test]
+fn type_mismatch_dir_orig_counts_missing_contents() {
+    // When original has a dir and backup has a file with the same name,
+    // the directory's contents should be counted as missing.
+    let (a, b) = testdata("type_mismatch");
+    let assert = cmd().args([&a, &b, "-v", "-v"]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    // name_a is a dir in a/ with child.txt, a file in b/
+    assert!(
+        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "name_a"),
+        "Expected type mismatch for name_a, got:\n{}",
+        output
+    );
+    // child.txt inside the dir should be counted as missing
+    assert!(
+        some_line_has(&output, "MISSING-FILE:", "child.txt"),
+        "Expected MISSING-FILE for child.txt inside type-mismatched dir, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn type_mismatch_dir_backup_counts_extra_contents() {
+    // When original has a file and backup has a dir with the same name,
+    // the directory's contents should be counted as extras.
+    let (a, b) = testdata("type_mismatch");
+    let assert = cmd().args([&a, &b, "-v", "-v"]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    // name_b is a file in a/, a dir in b/ with child.txt
+    assert!(
+        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "name_b"),
+        "Expected type mismatch for name_b, got:\n{}",
+        output
+    );
+    // child.txt inside the backup dir should be counted as extra
+    assert!(
+        some_line_has(&output, "EXTRA-FILE:", "child.txt"),
+        "Expected EXTRA-FILE for child.txt inside type-mismatched backup dir, got:\n{}",
+        output
+    );
 }
 
 // ── CLI validation ───────────────────────────────────────────
@@ -132,6 +181,32 @@ fn original_is_file_not_dir() {
 
     cmd()
         .args([&file_path, &b])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("is not a directory"));
+}
+
+#[test]
+fn nonexistent_backup_exits_2() {
+    let (a, _) = testdata("identical");
+    cmd()
+        .args([&a, "/nonexistent/dir/backup"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("Cannot resolve"));
+}
+
+#[test]
+fn backup_is_file_not_dir() {
+    let (a, _) = testdata("identical");
+    let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("Cargo.toml")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    cmd()
+        .args([&a, &file_path])
         .assert()
         .code(2)
         .stderr(predicate::str::contains("is not a directory"));

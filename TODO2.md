@@ -19,32 +19,29 @@
 
 ## Missing Test Coverage
 
-- [ ] T1. Nonexistent backup directory -> exit 2
-  - main.rs:30-33 handles this case
-  - No test exists (only `nonexistent_original_exits_2` is tested)
+- [x] T1. Nonexistent backup directory -> exit 2
+  - Test: `errors::nonexistent_backup_exits_2`
 
-- [ ] T2. Backup path is a file, not a directory -> exit 2
-  - main.rs:30-33 handles this
-  - No test (only `original_is_file_not_dir` is tested)
+- [x] T2. Backup path is a file, not a directory -> exit 2
+  - Test: `errors::backup_is_file_not_dir`
 
-- [ ] T3. Cannot read symlink targets -> ERROR
-  - compare.rs:200-203 handles this
-  - No test — hard to trigger without a race condition
+- [x] T3. Cannot read symlink targets -> ERROR — wontfix
+  - compare.rs handles this with explicit error reporting and error count increment
+  - Untestable: read_link fails only via race conditions (symlink deleted or parent permissions changed between readdir and read_link); lchmod not supported on Linux
 
-- [ ] T4. Both symlinks, one resolves to dir, other resolves to file
-  - compare.rs falls to target comparison (line 168); targets will likely differ -> SYMMIS
-  - No specific test; behavior is reasonable
+- [x] T4. Both symlinks, one resolves to dir, other resolves to file
+  - Fixed: symlink --follow path now detects resolved type mismatch → DIFFERENT-FILE [TYPE] with recursive counting
+  - Also fixed: non-symlink type mismatch now counts dir contents as missing/extras via count_recursive
+  - Tests: `symlinks::symlink_same_target_orig_dir_backup_file_follow`, `symlinks::symlink_same_target_orig_file_backup_dir_follow`, `symlinks::symlink_same_target_dir_vs_file_no_follow`, `errors::type_mismatch_dir_orig_counts_missing_contents`, `errors::type_mismatch_dir_backup_counts_extra_contents`
 
 - [x] T5. `--ignore` on extra file in backup tree (related to B1)
   - Test: `flags::ignore_extra_file_in_backup`
 
 ## Correctness Concerns
 
-- [ ] C1. Root dir counted before ignore check
-  - compare.rs:14-19 counts root as original+backup+similarity unconditionally, then compare_recursive checks ignore
-  - If someone did `--ignore /orig` (the root itself), root would still be counted
-  - Fine in practice because `--ignore` is validated to be within the tree, not the tree root itself
-  - Ruby (vfy.rb:280): Same — `$itemCount += 1` before `compareDirs`
+- [x] C1. Root dir counted before ignore check
+  - Fixed: moved similarity counting into `compare_recursive` (after ignore check) via `is_root` parameter; root original/backup counting also deferred
+  - Test: `flags::ignore_root_directory`
 
 - [x] C2. If both dirs unreadable, only orig error reported — wontfix
   - compare_recursive:34-50: if orig dir read fails, returns immediately; backup dir read failure never checked

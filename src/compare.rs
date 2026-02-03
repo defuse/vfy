@@ -11,15 +11,10 @@ use crate::cli::{Config, Verbosity};
 use crate::stats::{DiffReasons, Stats};
 
 pub fn compare_dirs(config: &Config, stats: &Stats) {
-    // Count the root directory as a processed item (both original and backup exist,
-    // validated in main.rs before calling this function).
-    stats.inc_original_items();
-    stats.inc_backup_items();
-    stats.inc_similarities();
-    compare_recursive(&config.original, &config.backup, config, stats);
+    compare_recursive(&config.original, &config.backup, config, stats, true);
 }
 
-fn compare_recursive(orig_dir: &Path, backup_dir: &Path, config: &Config, stats: &Stats) {
+fn compare_recursive(orig_dir: &Path, backup_dir: &Path, config: &Config, stats: &Stats, is_root: bool) {
     if config.verbosity >= Verbosity::Dirs {
         println!("DEBUG: Comparing {} to {}", orig_dir.display(), backup_dir.display());
     }
@@ -30,6 +25,15 @@ fn compare_recursive(orig_dir: &Path, backup_dir: &Path, config: &Config, stats:
         stats.inc_skipped();
         return;
     }
+
+    // Count this directory as a processed item. For the root, both original and
+    // backup are counted here. For subdirectories, the parent loop already counted
+    // them — only the similarity is deferred to here so the ignore check runs first.
+    if is_root {
+        stats.inc_original_items();
+        stats.inc_backup_items();
+    }
+    stats.inc_similarities();
 
     let orig_entries = match read_dir_entries(orig_dir) {
         Ok(entries) => entries,
@@ -171,8 +175,7 @@ fn handle_both_present(
         if orig_is_dir && backup_is_dir {
             if config.follow {
                 // Traverse the symlinked directories
-                stats.inc_similarities();
-                compare_recursive(orig_path, backup_path, config, stats);
+                compare_recursive(orig_path, backup_path, config, stats, false);
             } else {
                 println!(
                     "SYMLINK: {} (symlink to directory, use --follow to traverse)",
@@ -198,24 +201,39 @@ fn handle_both_present(
                     stats.inc_different();
                 } else if config.follow {
                     // Targets match, but with --follow we also compare resolved content.
-                    // First check the resolved target is a regular file (not a device, FIFO, etc.)
+                    // Check for type mismatch between resolved targets.
                     let orig_is_file = fs::metadata(orig_path).map(|m| m.is_file()).unwrap_or(false);
-                    if !orig_is_file {
+                    let backup_is_file = fs::metadata(backup_path).map(|m| m.is_file()).unwrap_or(false);
+
+                    if orig_is_dir && !backup_is_dir {
+                        // Original resolves to dir, backup to file
+                        println!("DIFFERENT-FILE [TYPE]: {} (dir vs file)", orig_path.display());
+                        stats.inc_different();
+                        count_recursive(orig_path, config, stats, Direction::Missing);
+                    } else if !orig_is_dir && backup_is_dir {
+                        // Original resolves to file, backup to dir
+                        println!("DIFFERENT-FILE [TYPE]: {} (file vs dir)", orig_path.display());
+                        stats.inc_different();
+                        count_recursive(backup_path, config, stats, Direction::Extra);
+                    } else if !orig_is_file || !backup_is_file {
+                        // Neither is a dir, but at least one isn't a regular file
+                        // (device, FIFO, socket, etc.)
                         println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
                         stats.inc_not_a_file_or_dir();
-                        return;
-                    }
-                    let reasons = compare_file(orig_path, backup_path, config, stats);
-                    match reasons {
-                        Some(r) if r.any() => {
-                            println!("DIFFERENT-FILE [{}]: {}", r, orig_path.display());
-                            stats.inc_different();
-                        }
-                        Some(_) => {
-                            stats.inc_similarities();
-                        }
-                        None => {
-                            // Error already reported inside compare_file
+                    } else {
+                        // Both resolve to regular files — compare content
+                        let reasons = compare_file(orig_path, backup_path, config, stats);
+                        match reasons {
+                            Some(r) if r.any() => {
+                                println!("DIFFERENT-FILE [{}]: {}", r, orig_path.display());
+                                stats.inc_different();
+                            }
+                            Some(_) => {
+                                stats.inc_similarities();
+                            }
+                            None => {
+                                // Error already reported inside compare_file
+                            }
                         }
                     }
                 } else {
@@ -248,6 +266,8 @@ fn handle_both_present(
         if !backup_meta.is_dir() {
             println!("DIFFERENT-FILE [TYPE]: {} (dir vs file)", orig_path.display());
             stats.inc_different();
+            // Count the directory's contents as missing from backup
+            count_recursive(orig_path, config, stats, Direction::Missing);
             return;
         }
 
@@ -284,13 +304,14 @@ fn handle_both_present(
             }
         }
 
-        stats.inc_similarities();
-        compare_recursive(orig_path, backup_path, config, stats);
+        compare_recursive(orig_path, backup_path, config, stats, false);
     } else {
         // Both are regular files
         if !backup_meta.is_file() {
             println!("DIFFERENT-FILE [TYPE]: {} (file vs dir)", orig_path.display());
             stats.inc_different();
+            // Count the backup directory's contents as extras
+            count_recursive(backup_path, config, stats, Direction::Extra);
             return;
         }
 

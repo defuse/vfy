@@ -512,6 +512,45 @@ fn ignore_symlink_to_dir_with_follow() {
 }
 
 #[test]
+fn ignore_root_directory() {
+    // C1: If the root directory itself is ignored, it should not be counted
+    // as original/backup/similarity — only as skipped.
+    let (a, b) = testdata("identical");
+    let assert = cmd()
+        .args([&a, &b, "-i", &a])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    assert!(
+        output.contains("SKIP:"),
+        "Expected SKIP for root, got:\n{}",
+        output
+    );
+    // Root should NOT be counted as a processed item or similarity
+    assert!(
+        output.contains("Original items processed: 0"),
+        "Ignored root should not be counted as original item, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Backup items processed: 0"),
+        "Ignored root should not be counted as backup item, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Similarities: 0"),
+        "Ignored root should not be counted as similarity, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+}
+
+#[test]
 fn all_with_ignore_skips_hashing() {
     // --all combined with --ignore: ignored entries should not produce BLAKE3 lines
     let (a, b) = testdata("nested");

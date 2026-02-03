@@ -2,7 +2,11 @@ use clap::Parser;
 use std::path::{Component, PathBuf};
 
 #[derive(Parser, Debug)]
-#[command(name = "backup-verify", about = "Verify backup integrity by comparing directory trees")]
+#[command(
+    name = "backup-verify",
+    about = "Verify backup integrity by comparing directory trees",
+    arg_required_else_help = true
+)]
 pub struct Cli {
     /// Original directory
     pub original: PathBuf,
@@ -19,7 +23,7 @@ pub struct Cli {
     pub samples: u32,
 
     /// Full BLAKE3 hash comparison
-    #[arg(long)]
+    #[arg(short, long)]
     pub all: bool,
 
     /// Follow symlinks into directories
@@ -27,7 +31,7 @@ pub struct Cli {
     pub follow: bool,
 
     /// Stay on one filesystem
-    #[arg(long)]
+    #[arg(short = 'o', long)]
     pub one_filesystem: bool,
 
     /// Directories to ignore (can be specified multiple times)
