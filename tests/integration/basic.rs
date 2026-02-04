@@ -142,10 +142,53 @@ fn different_size_and_hash() {
         .assert()
         .code(1)
         .stdout(
-            predicate::str::contains("DIFFERENT-FILE [SIZE, HASH]:")
+            predicate::str::contains("DIFFERENT-FILE [SIZE]:")
                 .and(predicate::str::contains("file.txt"))
                 .and(predicate::str::contains("Missing/different: 1 (50.00%)")),
         );
+}
+
+#[test]
+fn hash_catches_single_byte_difference() {
+    // 1 MB files identical except for one byte near the end.
+    // -s 1 is overwhelmingly likely to miss the difference (samples 32 bytes
+    // out of 1 MB), but --all must catch it via BLAKE3.
+    let tmp = std::env::temp_dir().join("bv_test_hash_1mb");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    let size = 1_000_000;
+    let mut data = vec![0u8; size];
+    std::fs::write(a.join("file.bin"), &data).unwrap();
+    // Flip one byte near the end
+    data[size - 37] = 0xFF;
+    std::fs::write(b.join("file.bin"), &data).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "-s", "1", "--all"])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Hash must catch it — sampling alone almost certainly won't
+    assert!(
+        some_line_has(&output, "DIFFERENT-FILE [HASH]:", "file.bin"),
+        "Expected HASH to catch single-byte difference, got:\n{}",
+        output
+    );
+    // Should NOT be SIZE (same length)
+    assert!(
+        no_line_has(&output, "DIFFERENT-FILE", "SIZE"),
+        "Files are same size, should not report SIZE, got:\n{}",
+        output
+    );
 }
 
 #[test]

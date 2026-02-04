@@ -165,7 +165,7 @@ fn handle_both_present(
     if orig_is_symlink || backup_is_symlink {
         // One is symlink and the other isn't → mismatch
         if orig_is_symlink != backup_is_symlink {
-            println!("DIFFERENT-SYMLINK-TARGET: {} (symlink mismatch)", orig_path.display());
+            println!("DIFFERENT-SYMLINK-STATUS: {} (symlink mismatch)", orig_path.display());
             stats.inc_different();
             return;
         }
@@ -347,7 +347,10 @@ fn handle_missing(
     config: &Config,
     stats: &Stats,
 ) {
-    if !orig_is_symlink && orig_meta.is_dir() {
+    if orig_is_symlink {
+        println!("MISSING-SYMLINK: {}", orig_path.display());
+        stats.inc_missing();
+    } else if orig_meta.is_dir() {
         println!("MISSING-DIR: {}", orig_path.display());
         stats.inc_missing();
         count_recursive(orig_path, config, stats, Direction::Missing);
@@ -378,7 +381,9 @@ fn handle_extra(backup_path: &Path, config: &Config, stats: &Stats) {
     stats.inc_backup_items();
     stats.inc_extras();
 
-    if meta.is_dir() {
+    if meta.is_symlink() {
+        println!("EXTRA-SYMLINK: {}", backup_path.display());
+    } else if meta.is_dir() {
         println!("EXTRA-DIR: {}", backup_path.display());
         count_recursive(backup_path, config, stats, Direction::Extra);
     } else {
@@ -436,7 +441,14 @@ fn count_recursive(dir: &Path, config: &Config, stats: &Stats, direction: Direct
             }
         }
 
-        if meta.is_dir() {
+        if meta.is_symlink() {
+            if config.verbosity >= Verbosity::Files {
+                match direction {
+                    Direction::Missing => println!("MISSING-SYMLINK: {}", path.display()),
+                    Direction::Extra => println!("EXTRA-SYMLINK: {}", path.display()),
+                }
+            }
+        } else if meta.is_dir() {
             if config.verbosity >= Verbosity::Files {
                 match direction {
                     Direction::Missing => println!("MISSING-DIR: {}", path.display()),
@@ -479,8 +491,8 @@ fn compare_file(orig: &Path, backup: &Path, config: &Config, stats: &Stats) -> O
         reasons.size = true;
     }
 
-    // Sample check — only if sizes match and samples > 0
-    if !reasons.size && config.samples > 0 && orig_size > 0 {
+    // Sample check — only if sizes match (short-circuit) and samples > 0
+    if !reasons.any() && config.samples > 0 && orig_size > 0 {
         let mut rng = rand::thread_rng();
         let sample_size: u64 = 32;
 
@@ -519,8 +531,8 @@ fn compare_file(orig: &Path, backup: &Path, config: &Config, stats: &Stats) -> O
         }
     }
 
-    // BLAKE3 hash check
-    if config.all {
+    // BLAKE3 hash check — only if no prior mismatch (short-circuit)
+    if !reasons.any() && config.all {
         let (orig_result, backup_result) = rayon::join(
             || hash_file(orig),
             || hash_file(backup),
@@ -569,6 +581,7 @@ fn read_sample(path: &Path, offset: u64, len: usize) -> std::io::Result<Vec<u8>>
     let mut file = fs::File::open(path)?;
     file.seek(SeekFrom::Start(offset))?;
     let mut buf = vec![0u8; len];
+    // TODO: what happens if we try to read past the end of the file?
     file.read_exact(&mut buf)?;
     Ok(buf)
 }

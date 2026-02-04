@@ -12,6 +12,7 @@ use cli::{Cli, Config};
 use stats::Stats;
 
 fn main() {
+    // Print the command-line we were run with
     let cmd: Vec<String> = std::env::args()
         .map(|a| {
             if a.contains(|c: char| c.is_whitespace() || "\"'\\$`!#&|;(){}[]<>?*~".contains(c)) {
@@ -53,6 +54,7 @@ fn main() {
     ctrlc::set_handler(move || {
         eprintln!("\nInterrupted!");
         stats_ctrlc.print_summary();
+        println!("WARNING: EXITING BEFORE VERIFICATION WAS COMPLETE!");
         if let Err(e) = std::io::stdout().flush() {
             eprintln!("Warning: failed to flush stdout: {}", e);
         }

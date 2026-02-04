@@ -230,7 +230,7 @@ fn sample_and_hash_combined() {
         .assert()
         .code(1)
         .stdout(
-            predicate::str::contains("DIFFERENT-FILE [SAMPLE, HASH]:")
+            predicate::str::contains("DIFFERENT-FILE [SAMPLE]:")
                 .and(predicate::str::contains("Missing/different: 1 (50.00%)")),
         );
 }
@@ -732,4 +732,106 @@ fn all_with_ignore_skips_hashing() {
         "Expected SKIP: for ignored path, got:\n{}",
         output
     );
+}
+
+#[test]
+fn ignore_symlink_skips_symlink_but_not_target_dir() {
+    // original/foo -> bar (symlink), original/bar/ (real dir with differing content)
+    // --ignore original/foo should skip the symlink entry but still traverse bar/
+    // --ignore original/bar should skip the real dir but still check the symlink
+    let tmp = std::env::temp_dir().join("bv_test_ignore_symlink_vs_target");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(a.join("bar")).unwrap();
+    std::fs::create_dir_all(b.join("bar")).unwrap();
+
+    // bar/ has differing content so we can tell if it's traversed
+    std::fs::write(a.join("bar").join("file.txt"), "original\n").unwrap();
+    std::fs::write(b.join("bar").join("file.txt"), "different content here\n").unwrap();
+
+    // foo -> bar (symlink in both sides, same target)
+    std::os::unix::fs::symlink("bar", a.join("foo")).unwrap();
+    std::os::unix::fs::symlink("bar", b.join("foo")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+
+    // Test 1: --ignore foo → symlink skipped, bar/ still traversed (diff detected)
+    let ignore_foo = a.join("foo").to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "-i", &ignore_foo])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    assert!(
+        some_line_has(&output, "SKIP:", "foo"),
+        "foo symlink should be skipped, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "DIFFERENT-FILE", "file.txt"),
+        "bar/file.txt should still be compared and differ, got:\n{}",
+        output
+    );
+
+    // Test 2: --ignore bar → real dir skipped, foo symlink still checked
+    let ignore_bar = a.join("bar").to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "-i", &ignore_bar])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    assert!(
+        some_line_has(&output, "SKIP:", "bar"),
+        "bar dir should be skipped, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "DIFFERENT-FILE", "file.txt"),
+        "bar/file.txt should not be compared (bar skipped), got:\n{}",
+        output
+    );
+    // foo symlink should still be checked — both have same target so it's a similarity
+    assert!(
+        !some_line_has(&output, "SKIP:", "foo"),
+        "foo should NOT be skipped (only bar is ignored), got:\n{}",
+        output
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn ignore_path_through_symlinked_root_errors() {
+    // If the path to the original/backup root goes through a symlink,
+    // canonicalize resolves it but normalize_path doesn't. An --ignore path
+    // specified via the unresolved root won't match the canonicalized root,
+    // producing a clear error.
+    let tmp = std::env::temp_dir().join("bv_test_ignore_symlinked_root");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let real_dir = tmp.join("real");
+    std::fs::create_dir_all(real_dir.join("a").join("sub")).unwrap();
+    std::fs::create_dir_all(real_dir.join("b").join("sub")).unwrap();
+    std::fs::write(real_dir.join("a").join("sub").join("f.txt"), "a\n").unwrap();
+    std::fs::write(real_dir.join("b").join("sub").join("f.txt"), "a\n").unwrap();
+
+    // Create a symlink alias to real_dir
+    let alias = tmp.join("alias");
+    std::os::unix::fs::symlink(&real_dir, &alias).unwrap();
+
+    // Pass roots via the symlink alias, but --ignore via the alias too
+    let a_str = alias.join("a").to_str().unwrap().to_string();
+    let b_str = alias.join("b").to_str().unwrap().to_string();
+    let ignore_path = alias.join("a").join("sub").to_str().unwrap().to_string();
+
+    cmd()
+        .args([&a_str, &b_str, "-i", &ignore_path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not within"));
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }

@@ -10,18 +10,23 @@ use std::path::{Component, PathBuf};
 Output prefixes (grep-friendly):
   MISSING-FILE:                  File in original missing from backup
   MISSING-DIR:                   Directory in original missing from backup
+  MISSING-SYMLINK:               Symlink in original missing from backup
   EXTRA-FILE:                    File in backup not in original
   EXTRA-DIR:                     Directory in backup not in original
-  DIFFERENT-FILE [reason]:       File differs (reason: SIZE, SAMPLE, HASH, TYPE)
-  DIFFERENT-SYMLINK-TARGET:      Symlink mismatch (different targets or types)
+  EXTRA-SYMLINK:                 Symlink in backup not in original
+  DIFFERENT-FILE [reason]:       File differs (reason: first mismatch of TYPE, SIZE, SAMPLE, HASH)
+  DIFFERENT-SYMLINK-TARGET:      Both sides are symlinks but point to different targets
+  DIFFERENT-SYMLINK-STATUS:      One side is a symlink, the other is not
   NOT_A_FILE_OR_DIR:             Entry is a device, FIFO, socket, etc.
-  SYMLINK:                       Symlink to directory skipped (use --follow)
-  DIFFERENT-FS:                        Different filesystem skipped (--one-filesystem)
+  SYMLINK:                       Symlink skipped (use --follow to compare content)
+  DANGLING-SYMLINK:              Symlink target does not exist (with --follow)
+  DIFFERENT-FS:                  Different filesystem skipped (--one-filesystem)
   SKIP:                          Entry skipped via --ignore
   ERROR:                         I/O or permission error
   DEBUG:                         Verbose logging (-v dirs, -vv files and hashes)
   SUMMARY:                       Final counts"
 )]
+
 pub struct Cli {
     /// Original directory
     pub original: PathBuf,
@@ -84,7 +89,8 @@ impl Config {
         let verbosity = match cli.verbose {
             0 => Verbosity::Quiet,
             1 => Verbosity::Dirs,
-            _ => Verbosity::Files,
+            2 => Verbosity::Files,
+            n => return Err(format!("-v can be specified at most twice, but was specified {} times", n)),
         };
 
         // Validate --ignore paths: must exist and be within original or backup tree.

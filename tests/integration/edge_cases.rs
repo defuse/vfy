@@ -1,4 +1,5 @@
 use super::{cmd, no_line_has, some_line_has, stdout_of, testdata, testdata_base};
+use std::process::Command as StdCommand;
 use predicates::prelude::*;
 
 #[test]
@@ -313,10 +314,10 @@ fn special_files_missing_from_backup() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // The device symlink is missing from backup — reported as MISSING-FILE
+    // The device symlink is missing from backup — reported as MISSING-SYMLINK
     assert!(
-        some_line_has(&output, "MISSING-FILE:", "devnull"),
-        "Expected MISSING-FILE for devnull symlink, got:\n{}",
+        some_line_has(&output, "MISSING-SYMLINK:", "devnull"),
+        "Expected MISSING-SYMLINK for devnull symlink, got:\n{}",
         output
     );
     assert!(
@@ -352,10 +353,10 @@ fn special_files_extra_in_backup() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // The device symlink is extra in backup — reported as EXTRA-FILE
+    // The device symlink is extra in backup — reported as EXTRA-SYMLINK
     assert!(
-        some_line_has(&output, "EXTRA-FILE:", "devnull"),
-        "Expected EXTRA-FILE for devnull symlink, got:\n{}",
+        some_line_has(&output, "EXTRA-SYMLINK:", "devnull"),
+        "Expected EXTRA-SYMLINK for devnull symlink, got:\n{}",
         output
     );
     assert!(
@@ -421,6 +422,176 @@ fn special_file_via_symlink_follow() {
     assert!(
         no_line_has(&output, "ERROR:", "special"),
         "Special file should be NOT_A_FILE_OR_DIR, not ERROR, got:\n{}",
+        output
+    );
+}
+
+// ── Special file (FIFO) missing/extra ───────────────────────
+
+#[test]
+fn special_file_missing_from_backup() {
+    // A FIFO in original but absent from backup should be NOT_A_FILE_OR_DIR,
+    // not MISSING-FILE.
+    let tmp = std::env::temp_dir().join("bv_test_fifo_missing");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Create a FIFO in a/ only
+    let fifo_path = a.join("my_fifo");
+    StdCommand::new("mkfifo")
+        .arg(&fifo_path)
+        .status()
+        .expect("mkfifo failed");
+
+    // Both sides have a regular file so there's something to compare
+    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
+    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // A special file missing from backup should be NOT_A_FILE_OR_DIR, not MISSING-FILE
+    assert!(
+        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "my_fifo"),
+        "Expected NOT_A_FILE_OR_DIR for missing FIFO, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "MISSING-FILE:", "my_fifo"),
+        "FIFO should not be reported as MISSING-FILE, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn special_file_extra_in_backup() {
+    // A FIFO in backup but absent from original should be NOT_A_FILE_OR_DIR,
+    // not EXTRA-FILE.
+    let tmp = std::env::temp_dir().join("bv_test_fifo_extra");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Create a FIFO in b/ only
+    let fifo_path = b.join("my_fifo");
+    StdCommand::new("mkfifo")
+        .arg(&fifo_path)
+        .status()
+        .expect("mkfifo failed");
+
+    // Both sides have a regular file
+    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
+    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // An extra special file in backup should be NOT_A_FILE_OR_DIR, not EXTRA-FILE
+    assert!(
+        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "my_fifo"),
+        "Expected NOT_A_FILE_OR_DIR for extra FIFO, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "EXTRA-FILE:", "my_fifo"),
+        "FIFO should not be reported as EXTRA-FILE, got:\n{}",
+        output
+    );
+}
+
+// ── Special file vs symlink ─────────────────────────────────
+
+#[test]
+fn special_file_vs_symlink() {
+    // One side has a FIFO, the other has a symlink with the same name.
+    // Should be NOT_A_FILE_OR_DIR, not DIFFERENT-SYMLINK-STATUS.
+    let tmp = std::env::temp_dir().join("bv_test_fifo_vs_symlink");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // a/entry is a FIFO
+    let fifo_path = a.join("entry");
+    StdCommand::new("mkfifo")
+        .arg(&fifo_path)
+        .status()
+        .expect("mkfifo failed");
+
+    // b/entry is a symlink
+    std::fs::write(b.join("target.txt"), "content\n").unwrap();
+    std::os::unix::fs::symlink("target.txt", b.join("entry")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Special file should always be NOT_A_FILE_OR_DIR regardless of what the other side is
+    assert!(
+        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "entry"),
+        "Expected NOT_A_FILE_OR_DIR when one side is a FIFO, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "DIFFERENT-SYMLINK-STATUS:", "entry"),
+        "FIFO vs symlink should not be DIFFERENT-SYMLINK-STATUS, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn symlink_vs_special_file() {
+    // Reverse: original is a symlink, backup is a FIFO.
+    let tmp = std::env::temp_dir().join("bv_test_symlink_vs_fifo");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // a/entry is a symlink
+    std::fs::write(a.join("target.txt"), "content\n").unwrap();
+    std::os::unix::fs::symlink("target.txt", a.join("entry")).unwrap();
+
+    // b/entry is a FIFO
+    let fifo_path = b.join("entry");
+    StdCommand::new("mkfifo")
+        .arg(&fifo_path)
+        .status()
+        .expect("mkfifo failed");
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    assert!(
+        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "entry"),
+        "Expected NOT_A_FILE_OR_DIR when one side is a FIFO, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "DIFFERENT-SYMLINK-STATUS:", "entry"),
+        "Symlink vs FIFO should not be DIFFERENT-SYMLINK-STATUS, got:\n{}",
         output
     );
 }

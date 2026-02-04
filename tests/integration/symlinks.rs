@@ -41,6 +41,116 @@ fn symlink_dir_with_follow() {
     );
 }
 
+// ── Sym→dir with different targets (BUG: targets never compared) ──
+
+#[test]
+fn symlink_dir_different_targets_no_follow() {
+    // Both sides have a symlink that resolves to a directory, but they point
+    // to different directories. The targets differ, so this must report
+    // DIFFERENT-SYMLINK-TARGET.
+    let tmp = std::env::temp_dir().join("bv_test_symdir_diff_target_nofollow");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Create two different target directories
+    let dir1 = tmp.join("dir1");
+    let dir2 = tmp.join("dir2");
+    std::fs::create_dir_all(&dir1).unwrap();
+    std::fs::create_dir_all(&dir2).unwrap();
+    std::fs::write(dir1.join("file.txt"), "from dir1\n").unwrap();
+    std::fs::write(dir2.join("file.txt"), "from dir2\n").unwrap();
+
+    // a/link -> dir1, b/link -> dir2 (different targets, both resolve to dirs)
+    std::os::unix::fs::symlink(&dir1, a.join("link")).unwrap();
+    std::os::unix::fs::symlink(&dir2, b.join("link")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Should report the targets differ
+    assert!(
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "link"),
+        "Expected DIFFERENT-SYMLINK-TARGET for dir symlinks with different targets, got:\n{}",
+        output
+    );
+    // Without --follow, should also emit SYMLINK: + skip (content not verified)
+    assert!(
+        some_line_has(&output, "SYMLINK:", "link"),
+        "Expected SYMLINK: skip after target mismatch without --follow, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn symlink_dir_different_targets_with_follow() {
+    // Both sides have a symlink that resolves to a directory, but they point
+    // to different directories. With --follow, this should report
+    // DIFFERENT-SYMLINK-TARGET and then recursively compare the contents,
+    // finding missing/extra/different files inside.
+    let tmp = std::env::temp_dir().join("bv_test_symdir_diff_target_follow");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Create two different target directories with overlapping but distinct contents
+    let dir1 = tmp.join("dir1");
+    let dir2 = tmp.join("dir2");
+    std::fs::create_dir_all(&dir1).unwrap();
+    std::fs::create_dir_all(&dir2).unwrap();
+    std::fs::write(dir1.join("shared.txt"), "same content\n").unwrap();
+    std::fs::write(dir2.join("shared.txt"), "same content\n").unwrap();
+    std::fs::write(dir1.join("only_orig.txt"), "only in dir1\n").unwrap();
+    std::fs::write(dir2.join("only_backup.txt"), "only in dir2\n").unwrap();
+
+    // a/link -> dir1, b/link -> dir2 (different targets, both resolve to dirs)
+    std::os::unix::fs::symlink(&dir1, a.join("link")).unwrap();
+    std::os::unix::fs::symlink(&dir2, b.join("link")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow"])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Should report the targets differ
+    assert!(
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "link"),
+        "Expected DIFFERENT-SYMLINK-TARGET for dir symlinks with different targets, got:\n{}",
+        output
+    );
+    // Should also recursively compare and find differences inside
+    assert!(
+        some_line_has(&output, "MISSING-FILE:", "only_orig.txt"),
+        "Expected MISSING-FILE for only_orig.txt inside followed symlink dir, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "EXTRA-FILE:", "only_backup.txt"),
+        "Expected EXTRA-FILE for only_backup.txt inside followed symlink dir, got:\n{}",
+        output
+    );
+    // shared.txt exists in both dirs with same content — should be a similarity
+    // root(1) + link dir(1) + shared.txt(1) = 3 similarities
+    assert!(
+        output.contains("Similarities: 3"),
+        "shared.txt inside followed symlink dir should count as similarity, got:\n{}",
+        output
+    );
+}
+
 #[test]
 fn symlink_target_mismatch() {
     let (a, b) = testdata("symlink_mismatch");
@@ -67,8 +177,86 @@ fn symlink_type_mismatch() {
 
     // type_mis: symlink in a, regular file in b
     assert!(
-        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "type_mis"),
-        "Expected SYMMIS for type_mis (symlink vs regular), got:\n{}",
+        some_line_has(&output, "DIFFERENT-SYMLINK-STATUS:", "type_mis"),
+        "Expected DIFFERENT-SYMLINK-STATUS for type_mis (symlink vs regular), got:\n{}",
+        output
+    );
+}
+
+// ── DIFFERENT-SYMLINK-STATUS with directory on one side ──────
+
+#[test]
+fn symlink_status_mismatch_orig_dir() {
+    // Original has a real directory with children, backup has a symlink.
+    // Should report DIFFERENT-SYMLINK-STATUS and count dir contents as missing.
+    let tmp = std::env::temp_dir().join("bv_test_symstatus_orig_dir");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // a/entry is a real directory with files inside
+    std::fs::create_dir_all(a.join("entry")).unwrap();
+    std::fs::write(a.join("entry/child.txt"), "content\n").unwrap();
+    // b/entry is a symlink to some file
+    std::fs::write(b.join("target.txt"), "target\n").unwrap();
+    std::os::unix::fs::symlink("target.txt", b.join("entry")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str, "-v", "-v"]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    assert!(
+        some_line_has(&output, "DIFFERENT-SYMLINK-STATUS:", "entry"),
+        "Expected DIFFERENT-SYMLINK-STATUS for dir vs symlink, got:\n{}",
+        output
+    );
+    // Directory contents should be counted as missing
+    assert!(
+        some_line_has(&output, "MISSING-FILE:", "child.txt"),
+        "Expected MISSING-FILE for child.txt inside dir that was replaced by symlink, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn symlink_status_mismatch_backup_dir() {
+    // Original has a symlink, backup has a real directory with children.
+    // Should report DIFFERENT-SYMLINK-STATUS and count dir contents as extra.
+    let tmp = std::env::temp_dir().join("bv_test_symstatus_backup_dir");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // a/entry is a symlink to some file
+    std::fs::write(a.join("target.txt"), "target\n").unwrap();
+    std::os::unix::fs::symlink("target.txt", a.join("entry")).unwrap();
+    // b/entry is a real directory with files inside
+    std::fs::create_dir_all(b.join("entry")).unwrap();
+    std::fs::write(b.join("entry/child.txt"), "content\n").unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str, "-v", "-v"]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    assert!(
+        some_line_has(&output, "DIFFERENT-SYMLINK-STATUS:", "entry"),
+        "Expected DIFFERENT-SYMLINK-STATUS for symlink vs dir, got:\n{}",
+        output
+    );
+    // Directory contents should be counted as extra
+    assert!(
+        some_line_has(&output, "EXTRA-FILE:", "child.txt"),
+        "Expected EXTRA-FILE for child.txt inside dir that replaced a symlink, got:\n{}",
         output
     );
 }
@@ -79,10 +267,10 @@ fn symlink_missing_from_backup() {
     let assert = cmd().args([&a, &b]).assert().code(1);
     let output = stdout_of(&assert);
 
-    // missing_link: symlink in a, absent from b → MISSING-FILE
+    // missing_link: symlink in a, absent from b → MISSING-SYMLINK
     assert!(
-        some_line_has(&output, "MISSING-FILE:", "missing_link"),
-        "Expected MISSING-FILE for missing_link, got:\n{}",
+        some_line_has(&output, "MISSING-SYMLINK:", "missing_link"),
+        "Expected MISSING-SYMLINK for missing_link, got:\n{}",
         output
     );
 }
@@ -216,10 +404,10 @@ fn extra_symlink_in_backup() {
     let assert = cmd().args([&a, &b]).assert().code(1);
     let output = stdout_of(&assert);
 
-    // Extra symlink should be reported as EXTRA-FILE (symlink_metadata.is_dir() = false)
+    // Extra symlink should be reported as EXTRA-SYMLINK
     assert!(
-        some_line_has(&output, "EXTRA-FILE:", "extra_link"),
-        "Expected EXTRA-FILE for extra symlink, got:\n{}",
+        some_line_has(&output, "EXTRA-SYMLINK:", "extra_link"),
+        "Expected EXTRA-SYMLINK for extra symlink, got:\n{}",
         output
     );
     assert!(output.contains("Extras: 1"), "got:\n{}", output);
@@ -267,9 +455,10 @@ fn file_symlink_with_follow_compares_content() {
 }
 
 #[test]
-fn file_symlink_without_follow_checks_target_only() {
-    // Same setup but WITHOUT --follow.
-    // link should be similarity (targets match), only target.txt different.
+fn file_symlink_without_follow_reports_skip() {
+    // Both sides have matching file symlinks. Without --follow, the symlink
+    // should be reported as SYMLINK: + skipped (content not verified),
+    // not silently counted as a similarity.
     let tmp = std::env::temp_dir().join("bv_test_file_symlink_no_follow");
     let _ = std::fs::remove_dir_all(&tmp);
     let a = tmp.join("a");
@@ -296,10 +485,146 @@ fn file_symlink_without_follow_checks_target_only() {
         "Expected DIFFERENT-FILE for target.txt, got:\n{}",
         output
     );
-    // Without --follow, link should NOT be different (targets match → similarity)
+    // Without --follow, link should be SYMLINK: + skipped, not a similarity
+    assert!(
+        some_line_has(&output, "SYMLINK:", "link"),
+        "Expected SYMLINK: for file symlink without --follow, got:\n{}",
+        output
+    );
     assert!(
         !some_line_has(&output, "DIFFERENT-FILE", "/link"),
-        "link should be similarity without --follow (targets match), got:\n{}",
+        "link should not be compared without --follow, got:\n{}",
+        output
+    );
+}
+
+// ── Dangling symlinks with --follow ──────────────────────────
+
+#[test]
+fn dangling_symlinks_same_target_with_follow() {
+    // Both sides have dangling symlinks to the same nonexistent target.
+    // With --follow, the targets can't be resolved. Should report
+    // DANGLING-SYMLINK: to indicate we couldn't follow, not NOT_A_FILE_OR_DIR.
+    let tmp = std::env::temp_dir().join("bv_test_dangling_follow");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Both sides point to the same nonexistent target
+    std::os::unix::fs::symlink("nonexistent_target", a.join("dangling")).unwrap();
+    std::os::unix::fs::symlink("nonexistent_target", b.join("dangling")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str, "--follow"]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Should NOT be NOT_A_FILE_OR_DIR — these are dangling symlinks, not special files
+    assert!(
+        !some_line_has(&output, "NOT_A_FILE_OR_DIR:", "dangling"),
+        "Dangling symlinks should not be NOT_A_FILE_OR_DIR, got:\n{}",
+        output
+    );
+    // Should report DANGLING-SYMLINK: to indicate --follow couldn't resolve the target
+    assert!(
+        some_line_has(&output, "DANGLING-SYMLINK:", "dangling"),
+        "Expected DANGLING-SYMLINK: for unresolvable symlinks with --follow, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn dangling_orig_resolving_backup_file_with_follow() {
+    // Orig symlink is dangling, backup symlink resolves to a file.
+    // With --follow, the backup content is extra since orig can't provide it.
+    let tmp = std::env::temp_dir().join("bv_test_dangling_orig_file_backup");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // a/link points to nonexistent target (dangling)
+    std::os::unix::fs::symlink("nonexistent", a.join("link")).unwrap();
+    // b/link points to a real file
+    std::fs::write(b.join("target.txt"), "content\n").unwrap();
+    std::os::unix::fs::symlink("target.txt", b.join("link")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str, "--follow"]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Targets differ → DIFFERENT-SYMLINK-TARGET
+    assert!(
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "link"),
+        "Expected DIFFERENT-SYMLINK-TARGET, got:\n{}",
+        output
+    );
+    // Orig is dangling → DANGLING-SYMLINK
+    assert!(
+        some_line_has(&output, "DANGLING-SYMLINK:", "link"),
+        "Expected DANGLING-SYMLINK: for dangling orig, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "NOT_A_FILE_OR_DIR:", "link"),
+        "Should not be NOT_A_FILE_OR_DIR, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn dangling_backup_resolving_orig_dir_with_follow() {
+    // Orig symlink resolves to a directory with children, backup symlink is
+    // dangling. With --follow, the orig dir contents are missing from backup.
+    let tmp = std::env::temp_dir().join("bv_test_dangling_backup_dir_orig");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // a/link points to a real directory with files
+    let target_dir = tmp.join("real_dir");
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::write(target_dir.join("child.txt"), "content\n").unwrap();
+    std::os::unix::fs::symlink(&target_dir, a.join("link")).unwrap();
+    // b/link points to nonexistent target (dangling)
+    std::os::unix::fs::symlink("nonexistent", b.join("link")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow", "-v", "-v"])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Targets differ → DIFFERENT-SYMLINK-TARGET
+    assert!(
+        some_line_has(&output, "DIFFERENT-SYMLINK-TARGET:", "link"),
+        "Expected DIFFERENT-SYMLINK-TARGET, got:\n{}",
+        output
+    );
+    // Backup is dangling → DANGLING-SYMLINK
+    assert!(
+        some_line_has(&output, "DANGLING-SYMLINK:", "link"),
+        "Expected DANGLING-SYMLINK: for dangling backup, got:\n{}",
+        output
+    );
+    // Orig dir contents should be counted as missing
+    assert!(
+        some_line_has(&output, "MISSING-FILE:", "child.txt"),
+        "Expected MISSING-FILE for child.txt inside orig dir with dangling backup, got:\n{}",
         output
     );
 }
@@ -496,6 +821,53 @@ fn symlink_same_target_orig_file_backup_dir_follow() {
     assert!(
         some_line_has(&output, "EXTRA-FILE:", "inside.txt"),
         "Expected EXTRA-FILE for inside.txt in type-mismatched symlink backup dir, got:\n{}",
+        output
+    );
+    assert!(output.contains("Errors: 0"), "got:\n{}", output);
+}
+
+// ── Symlink-to-directory missing from backup ────────────────
+
+#[test]
+fn missing_symlink_to_dir() {
+    // A symlink that points to a directory should be reported as MISSING-SYMLINK,
+    // not MISSING-DIR or MISSING-FILE.
+    let tmp = std::env::temp_dir().join("bv_test_missing_symlink_to_dir");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Create a real directory target
+    let target_dir = tmp.join("real_dir");
+    std::fs::create_dir_all(&target_dir).unwrap();
+    std::fs::write(target_dir.join("inside.txt"), "content\n").unwrap();
+
+    // a has a symlink to that directory; b does not
+    std::os::unix::fs::symlink(&target_dir, a.join("link_to_dir")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
+    let output = stdout_of(&assert);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Should be MISSING-SYMLINK, not MISSING-DIR or MISSING-FILE
+    assert!(
+        some_line_has(&output, "MISSING-SYMLINK:", "link_to_dir"),
+        "Expected MISSING-SYMLINK for symlink-to-directory, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "link_to_dir"),
+        "Symlink-to-dir should NOT be MISSING-DIR, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "MISSING-FILE:", "link_to_dir"),
+        "Symlink-to-dir should NOT be MISSING-FILE, got:\n{}",
         output
     );
     assert!(output.contains("Errors: 0"), "got:\n{}", output);
