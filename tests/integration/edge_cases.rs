@@ -406,10 +406,10 @@ fn special_file_via_symlink_follow() {
         "Expected NOT_A_FILE_OR_DIR for symlink to /dev/urandom, got:\n{}",
         output
     );
-    // Should not be counted as a similarity
+    // Cat4: same-target symlink pair counted as similarity (root + symlink pair + ok.txt = 3)
     assert!(
-        output.contains("Similarities: 2"),
-        "Special file should not be a similarity (root + ok.txt only), got:\n{}",
+        output.contains("Similarities: 3"),
+        "Expected similarities: root + same-target symlink pair + ok.txt = 3, got:\n{}",
         output
     );
     // Should be counted in the not-a-file-or-dir summary (one per side)

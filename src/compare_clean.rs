@@ -13,6 +13,7 @@ use crate::stats::{DiffReasons, Stats};
 // ── Enums ────────────────────────────────────────────────────────────────────
 
 /// Result of loading metadata for a path.
+#[derive(Debug)]
 enum Meta {
     Error(String),
     Dangling,
@@ -62,20 +63,23 @@ impl Direction {
     }
 }
 
-fn classify(meta: &Meta) -> EntryKind {
-    match meta {
-        Meta::Symlink => EntryKind::Symlink,
-        Meta::Dir(_, _) => EntryKind::Dir,
-        _ => EntryKind::File,
+impl Meta {
+    fn classify(&self) -> EntryKind {
+        match self {
+            Meta::File(_) => EntryKind::File,
+            Meta::Dir(_, _) => EntryKind::Dir,
+            Meta::Symlink => EntryKind::Symlink,
+            _ => unreachable!("classify called on {:?}", self),
+        }
     }
-}
 
-fn is_error_or_dangling(meta: &Meta) -> bool {
-    matches!(meta, Meta::Error(_) | Meta::Dangling)
-}
+    fn is_error_or_dangling(&self) -> bool {
+        matches!(self, Meta::Error(_) | Meta::Dangling)
+    }
 
-fn is_file_dir_or_symlink(meta: &Meta) -> bool {
-    matches!(meta, Meta::File(_) | Meta::Dir(_, _) | Meta::Symlink)
+    fn is_file_dir_or_symlink(&self) -> bool {
+        matches!(self, Meta::File(_) | Meta::Dir(_, _) | Meta::Symlink)
+    }
 }
 
 // ── Metadata loading ─────────────────────────────────────────────────────────
@@ -159,7 +163,7 @@ fn compare(
     let meta_back = load_meta(backup, follow);
 
     // --- Errors / Dangling ---
-    if is_error_or_dangling(&meta_orig) {
+    if meta_orig.is_error_or_dangling() {
         stats.inc_original_items();
         match &meta_orig {
             Meta::Error(msg) => {
@@ -174,7 +178,7 @@ fn compare(
         }
     }
 
-    if is_error_or_dangling(&meta_back) {
+    if meta_back.is_error_or_dangling() {
         stats.inc_backup_items();
         match &meta_back {
             Meta::Error(msg) => {
@@ -189,7 +193,7 @@ fn compare(
         }
     }
 
-    if is_error_or_dangling(&meta_orig) && is_error_or_dangling(&meta_back) {
+    if meta_orig.is_error_or_dangling() && meta_back.is_error_or_dangling() {
         return;
     }
 
@@ -257,10 +261,10 @@ fn compare(
         stats.inc_different();
     }
 
-    if is_file_dir_or_symlink(&meta_orig) {
+    if meta_orig.is_file_dir_or_symlink() {
         report(orig, Direction::Missing, follow, true, config, stats);
     }
-    if is_file_dir_or_symlink(&meta_back) {
+    if meta_back.is_file_dir_or_symlink() {
         report(backup, Direction::Extra, follow, true, config, stats);
     }
 }
@@ -290,18 +294,15 @@ fn compare_files(
         );
     }
 
-    let reasons = compare_file_content(orig, backup, orig_meta, backup_meta, config, stats);
-    match reasons {
-        Some(r) if r.any() => {
+    match compare_file_content(orig, backup, orig_meta, backup_meta, config, stats) {
+        FileCompareResult::Different(r) => {
             println!("DIFFERENT-FILE [{}]: {}", r, orig.display());
             stats.inc_different();
         }
-        Some(_) => {
+        FileCompareResult::Same => {
             stats.inc_similarities();
         }
-        None => {
-            // Error already reported inside compare_file_content
-        }
+        FileCompareResult::ErrorAlreadyReported => {}
     }
 }
 
@@ -443,14 +444,15 @@ fn compare_symlinks(
         stats.inc_different();
     }
 
+    if !targets_differ {
+        stats.inc_similarities();
+    }
+
     if !config.follow {
         println!(
             "SYMLINK: {} (symlink, use --follow to compare content)",
             orig.display()
         );
-        if !targets_differ {
-            stats.inc_similarities();
-        }
         stats.inc_skipped();
         return;
     }
@@ -458,9 +460,6 @@ fn compare_symlinks(
     // --follow: compare resolved content as additional items.
     // Symlinks are already counted above. The resolved content is
     // counted separately by compare (via its helpers or report).
-    if !targets_differ {
-        stats.inc_similarities();
-    }
     compare(orig, backup, true, config, stats);
 }
 
@@ -513,7 +512,7 @@ fn report(
         return;
     }
 
-    let kind = classify(&meta);
+    let kind = meta.classify();
     if print {
         println!("{}: {}", direction.prefix(kind), path.display());
     }
@@ -530,14 +529,22 @@ fn report(
         Meta::Symlink if config.follow => {
             report(path, direction, true, print_children, config, stats);
         }
-        _ => {}
+        Meta::File(_) | Meta::Symlink => {}
+        _ => unreachable!("report: unexpected meta {:?} after classify", meta),
     }
 }
 
 // ── File content comparison ──────────────────────────────────────────────────
 
-/// Compare two files by content. Returns None if an I/O error prevented comparison.
-/// Reports errors for each side independently.
+enum FileCompareResult {
+    Same,
+    Different(DiffReasons),
+    /// An I/O error occurred; `compare_file_content` already called `inc_errors`
+    /// for each failing side.
+    ErrorAlreadyReported,
+}
+
+/// Compare two files by content. Reports errors for each side independently.
 fn compare_file_content(
     orig: &Path,
     backup: &Path,
@@ -545,7 +552,7 @@ fn compare_file_content(
     backup_meta: &fs::Metadata,
     config: &Config,
     stats: &Stats,
-) -> Option<DiffReasons> {
+) -> FileCompareResult {
     let mut reasons = DiffReasons::default();
 
     let orig_size = orig_meta.len();
@@ -587,7 +594,7 @@ fn compare_file_content(
                 (Err(e), Ok(_)) => {
                     println!("ERROR: Cannot read sample from {}: {}", orig.display(), e);
                     stats.inc_errors();
-                    return None;
+                    return FileCompareResult::ErrorAlreadyReported;
                 }
                 (Ok(_), Err(e)) => {
                     println!(
@@ -596,7 +603,7 @@ fn compare_file_content(
                         e
                     );
                     stats.inc_errors();
-                    return None;
+                    return FileCompareResult::ErrorAlreadyReported;
                 }
                 (Err(e1), Err(e2)) => {
                     println!("ERROR: Cannot read sample from {}: {}", orig.display(), e1);
@@ -607,7 +614,7 @@ fn compare_file_content(
                         e2
                     );
                     stats.inc_errors();
-                    return None;
+                    return FileCompareResult::ErrorAlreadyReported;
                 }
             }
         }
@@ -636,7 +643,7 @@ fn compare_file_content(
         };
 
         if orig_hash.is_none() || backup_hash.is_none() {
-            return None;
+            return FileCompareResult::ErrorAlreadyReported;
         }
 
         let orig_hash = orig_hash.unwrap();
@@ -656,7 +663,11 @@ fn compare_file_content(
         }
     }
 
-    Some(reasons)
+    if reasons.any() {
+        FileCompareResult::Different(reasons)
+    } else {
+        FileCompareResult::Same
+    }
 }
 
 // ── Utilities ────────────────────────────────────────────────────────────────

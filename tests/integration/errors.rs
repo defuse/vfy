@@ -102,14 +102,15 @@ fn type_mismatch_summary() {
 
     // a/ has: root + name_a/ (dir) + name_a/child.txt + name_b (file) + same.txt = 5 items
     // b/ has: root + name_a (file) + name_b/ (dir) + name_b/child.txt + same.txt = 5 items
-    // name_a: TYPE mismatch (dir vs file), name_a dir + child.txt missing
-    // name_b: TYPE mismatch (file vs dir), name_b dir + child.txt extra
+    // Cat1: type mismatch reports BOTH sides
+    // name_a: TYPE mismatch (dir vs file), MISSING-DIR (dir + child.txt) + EXTRA-FILE
+    // name_b: TYPE mismatch (file vs dir), MISSING-FILE + EXTRA-DIR (dir + child.txt)
     assert!(output.contains("Original items processed: 5"), "got:\n{}", output);
     assert!(output.contains("Backup items processed: 5"), "got:\n{}", output);
-    // Missing/different: name_a (type) + name_a (missing-dir) + name_a/child.txt (missing) + name_b (type) = 4
-    assert!(output.contains("Missing/different: 4"), "got:\n{}", output);
-    // Extras: name_b (extra-dir) + name_b/child.txt = 2
-    assert!(output.contains("Extras: 2"), "got:\n{}", output);
+    // Missing/different: name_a (type) + name_a (missing-dir) + name_a/child.txt (missing) + name_b (type) + name_b (missing-file) = 5
+    assert!(output.contains("Missing/different: 5"), "got:\n{}", output);
+    // Extras: name_a (extra-file) + name_b (extra-dir) + name_b/child.txt = 3
+    assert!(output.contains("Extras: 3"), "got:\n{}", output);
     // Similarities: root + same.txt = 2
     assert!(output.contains("Similarities: 2"), "got:\n{}", output);
 }

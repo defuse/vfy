@@ -408,12 +408,14 @@ case!(file_x_dir {
     flags: [],
     lines: [
         "DIFFERENT-TYPE: a/entry",
+        "MISSING-FILE: a/entry",
         "EXTRA-DIR: b/entry",
     ],
-    // child counted by count_recursive but only printed at -vv
+    // Both sides reported: MISSING-FILE for orig file, EXTRA-DIR for backup dir
+    // child counted by report but only printed at -vv
     original_processed: 2,
     backup_processed: 3,
-    missing: 0,
+    missing: 1,
     different: 1,
     extras: 2,
     not_a_file_or_dir: 0,
@@ -433,12 +435,13 @@ case!(file_x_dir_vv {
     flags: ["-vv"],
     lines: [
         "DIFFERENT-TYPE: a/entry",
+        "MISSING-FILE: a/entry",
         "EXTRA-DIR: b/entry",
         "EXTRA-FILE: b/entry/child",
     ],
     original_processed: 2,
     backup_processed: 3,
-    missing: 0,
+    missing: 1,
     different: 1,
     extras: 2,
     not_a_file_or_dir: 0,
@@ -620,13 +623,14 @@ case!(file_x_symlink_to_file {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-FILE: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-FILE: b/target",
     ],
     original_processed: 2,
     backup_processed: 3,
     missing: 1,
     different: 1,
-    extras: 1,
+    extras: 2,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -645,13 +649,14 @@ case!(file_x_symlink_to_dir {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-FILE: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-DIR: b/target",
     ],
     original_processed: 2,
     backup_processed: 3,
     missing: 1,
     different: 1,
-    extras: 1,
+    extras: 2,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -669,12 +674,13 @@ case!(file_x_symlink_dangling {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-FILE: a/entry",
+        "EXTRA-SYMLINK: b/entry",
     ],
     original_processed: 2,
     backup_processed: 2,
     missing: 1,
     different: 1,
-    extras: 0,
+    extras: 1,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -697,13 +703,16 @@ case!(file_x_symlink_to_file_follow {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-FILE: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-FILE: b/target",
     ],
+    // Cat1: symlink side reported as EXTRA-SYMLINK
+    // Cat3: report follows symlink → resolved file counted as item (+1 backup, +1 extras)
     original_processed: 2,
-    backup_processed: 3,
+    backup_processed: 4,
     missing: 1,
     different: 1,
-    extras: 1,
+    extras: 3,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -723,15 +732,17 @@ case!(file_x_symlink_to_dir_follow {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-FILE: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-DIR: b/target",
     ],
-    // "target" dir + child only in backup → EXTRA-DIR + count_recursive counts child
-    // child only printed at -vv
+    // Cat1: symlink side reported as EXTRA-SYMLINK
+    // Cat3: report follows symlink → resolved dir + child counted as items
+    // "target" dir + child only in backup → EXTRA-DIR + child
     original_processed: 2,
-    backup_processed: 4,
+    backup_processed: 6,
     missing: 1,
     different: 1,
-    extras: 2,
+    extras: 5,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -749,16 +760,20 @@ case!(file_x_symlink_dangling_follow {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-FILE: a/entry",
+        "EXTRA-SYMLINK: b/entry",
+        "DANGLING-SYMLINK: b/entry",
     ],
+    // Cat1: symlink side reported as EXTRA-SYMLINK
+    // Cat3: report follows symlink → dangling → error
     original_processed: 2,
-    backup_processed: 2,
+    backup_processed: 3,
     missing: 1,
     different: 1,
-    extras: 0,
+    extras: 1,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
-    errors: 0,
+    errors: 1,
 });
 
 // === One-side symlink: Dir x Sym (no --follow) ===
@@ -776,15 +791,17 @@ case!(dir_x_symlink_to_file {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-DIR: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-FILE: b/target",
     ],
-    // orig is a real dir → report_missing counts dir + child
+    // orig is a real dir → report counts dir + child as missing
+    // symlink side also reported as EXTRA-SYMLINK
     // "target" only in backup → EXTRA-FILE
     original_processed: 3,
     backup_processed: 3,
     missing: 2,
     different: 1,
-    extras: 1,
+    extras: 2,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -804,16 +821,17 @@ case!(dir_x_symlink_to_file_follow {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-DIR: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-FILE: b/target",
     ],
-    // --follow doesn't affect DIFFERENT-SYMLINK-STATUS branch
-    // orig dir → report_missing: dir(1) + child(1) = 2 missing
-    // "target" only in backup → EXTRA-FILE
+    // Cat1: symlink side reported as EXTRA-SYMLINK
+    // Cat3: report follows symlink → resolved file counted (+1 backup, +1 extras)
+    // orig dir → report: dir(1) + child(1) = 2 missing
     original_processed: 3,
-    backup_processed: 3,
+    backup_processed: 4,
     missing: 2,
     different: 1,
-    extras: 1,
+    extras: 3,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -834,15 +852,17 @@ case!(dir_x_symlink_to_dir {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-DIR: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-DIR: b/target",
     ],
-    // orig dir → report_missing: dir(1) + child(1) = 2 missing
-    // "target" dir + child2 only in backup → EXTRA-DIR(1) + count_recursive child2(1) = 2 extras
+    // orig dir → report: dir(1) + child(1) = 2 missing
+    // symlink side also reported as EXTRA-SYMLINK
+    // "target" dir + child2 only in backup → EXTRA-DIR(1) + child2(1) = 2+1 extras
     original_processed: 3,
     backup_processed: 4,
     missing: 2,
     different: 1,
-    extras: 2,
+    extras: 3,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -864,15 +884,17 @@ case!(dir_x_symlink_to_dir_follow {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-DIR: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "EXTRA-DIR: b/target",
     ],
-    // --follow doesn't affect DIFFERENT-SYMLINK-STATUS branch
-    // target/child is NOT matched against entry/child — all target contents are extras
+    // Cat1: symlink side reported as EXTRA-SYMLINK
+    // Cat3: report follows symlink → resolved dir(1) + child(1) + child2(1) = 3 more extras
+    // "target" dir + children also in backup = EXTRA-DIR + child + child2
     original_processed: 3,
-    backup_processed: 5,
+    backup_processed: 8,
     missing: 2,
     different: 1,
-    extras: 3,
+    extras: 7,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -891,14 +913,15 @@ case!(dir_x_symlink_dangling {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-DIR: a/entry",
+        "EXTRA-SYMLINK: b/entry",
     ],
-    // orig dir → report_missing: dir(1) + child(1) = 2 missing
-    // backup is the symlink side, no target file
+    // orig dir → report: dir(1) + child(1) = 2 missing
+    // symlink side also reported as EXTRA-SYMLINK
     original_processed: 3,
     backup_processed: 2,
     missing: 2,
     different: 1,
-    extras: 0,
+    extras: 1,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
@@ -917,18 +940,20 @@ case!(dir_x_symlink_dangling_follow {
     lines: [
         "DIFFERENT-SYMLINK-STATUS: a/entry",
         "MISSING-DIR: a/entry",
+        "EXTRA-SYMLINK: b/entry",
+        "DANGLING-SYMLINK: b/entry",
     ],
-    // --follow doesn't affect DIFFERENT-SYMLINK-STATUS branch
-    // Same as no-follow
+    // Cat1: symlink side reported as EXTRA-SYMLINK
+    // Cat3: report follows dangling symlink → error
     original_processed: 3,
-    backup_processed: 2,
+    backup_processed: 3,
     missing: 2,
     different: 1,
-    extras: 0,
+    extras: 1,
     not_a_file_or_dir: 0,
     similarities: 1,
     skipped: 0,
-    errors: 0,
+    errors: 1,
 });
 
 // === One-side symlink: Sym x Fifo ===
@@ -1027,11 +1052,11 @@ case!(symlink_to_file_x_fifo_follow {
         "MISSING-SYMLINK: a/entry",
         "MISSING-FILE: a/target",
     ],
-    // Same as no-follow: special takes priority, --follow irrelevant.
+    // Cat3: report follows symlink → resolved file counted as separate item (+1 orig, +1 missing)
     // "target" only in orig → MISSING-FILE
-    original_processed: 3,
+    original_processed: 4,
     backup_processed: 2,
-    missing: 2,
+    missing: 3,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 1,
@@ -1054,11 +1079,12 @@ case!(symlink_to_dir_x_fifo_follow {
         "MISSING-SYMLINK: a/entry",
         "MISSING-DIR: a/target",
     ],
+    // Cat3: report follows symlink → resolved dir counted as separate item (+1 orig, +1 missing)
     // "entry": backup FIFO → NOT_A_FILE_OR_DIR, orig symlink → MISSING-SYMLINK
     // "target": only in orig → MISSING-DIR
-    original_processed: 3,
+    original_processed: 4,
     backup_processed: 2,
-    missing: 2,
+    missing: 3,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 1,
@@ -1080,8 +1106,9 @@ case!(symlink_dangling_x_fifo_follow {
         "MISSING-SYMLINK: a/entry",
         "DANGLING-SYMLINK: a/entry",
     ],
+    // Cat3: report follows symlink → dangling counted as separate item (+1 orig)
     // "entry": backup FIFO → NOT_A_FILE_OR_DIR, orig dangling symlink → MISSING-SYMLINK + DANGLING-SYMLINK (error)
-    original_processed: 2,
+    original_processed: 3,
     backup_processed: 2,
     missing: 1,
     different: 0,
@@ -1129,10 +1156,11 @@ case!(symlink_to_file_x_absent_follow {
         "MISSING-SYMLINK: a/entry",
         "MISSING-FILE: a/target",
     ],
-    // Same as no-follow — target file is a real entry, independently missing
-    original_processed: 3,
+    // Cat3: report follows symlink → resolved file counted as separate item (+1 orig, +1 missing)
+    // Resolved MISSING-FILE not printed at default verbosity
+    original_processed: 4,
     backup_processed: 1,
-    missing: 2,
+    missing: 3,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 0,
@@ -1178,12 +1206,12 @@ case!(symlink_to_dir_x_absent_follow {
         "MISSING-SYMLINK: a/entry",
         "MISSING-DIR: a/target",
     ],
-    // With --follow, entry resolves to target dir → entry/child also missing
-    // entry + entry/child + target + target/child = 4 missing
+    // Cat3: report follows symlink → resolved dir+child counted as separate items
+    // entry + entry/child + target + target/child = 5 missing
     // entry/child and target/child not printed without -vv
-    original_processed: 5,
+    original_processed: 6,
     backup_processed: 1,
-    missing: 4,
+    missing: 5,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 0,
@@ -1223,8 +1251,8 @@ case!(symlink_dangling_x_absent_follow {
         "MISSING-SYMLINK: a/entry",
         "DANGLING-SYMLINK: a/entry",
     ],
-    // With --follow, handle_missing should also report the symlink is dangling (error)
-    original_processed: 2,
+    // Cat3: report follows symlink → dangling counted as separate item (+1 orig)
+    original_processed: 3,
     backup_processed: 1,
     missing: 1,
     different: 0,
@@ -1274,16 +1302,17 @@ case!(symfile_x_symfile_same_follow {
     ],
     flags: ["--follow"],
     lines: [],
-    // With --follow, matching symlinks compared by resolved content
+    // Cat2: resolved file counted as separate item (+1 orig, +1 backup)
+    // Cat4: same-target symlink pair counted as similarity (+1 sim)
     // entry resolves to file with same contents → similarity
     // "target" files also match → similarity
-    original_processed: 3,
-    backup_processed: 3,
+    original_processed: 4,
+    backup_processed: 4,
     missing: 0,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 0,
-    similarities: 3,
+    similarities: 4,
     skipped: 0,
     errors: 0,
 });
@@ -1329,17 +1358,19 @@ case!(symdir_x_symdir_same_follow {
     ],
     flags: ["--follow"],
     lines: [],
+    // Cat2: resolved dir+child counted as separate items (+1 orig, +1 backup each)
     // With --follow, entry resolves to target dir → compare_recursive
     // entry/child discovered via followed symlink
+    // Cat4: same-target symlink pair counted as similarity
     // target dir also walked independently → target/child discovered
     // All match → similarities
-    original_processed: 5,
-    backup_processed: 5,
+    original_processed: 6,
+    backup_processed: 6,
     missing: 0,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 0,
-    similarities: 5,
+    similarities: 6,
     skipped: 0,
     errors: 0,
 });
@@ -1379,10 +1410,11 @@ case!(symdangling_x_symdangling_same_follow {
         "DANGLING-SYMLINK: a/entry",
         "DANGLING-SYMLINK: b/entry",
     ],
+    // Cat2: resolved (dangling) content counted as separate items (+1 orig, +1 backup)
     // Both dangling with same target — symlinks match, both dangling = 2 errors
     // TODO: update when dangling symlink counter is added
-    original_processed: 2,
-    backup_processed: 2,
+    original_processed: 3,
+    backup_processed: 3,
     missing: 0,
     different: 0,
     extras: 0,
@@ -1440,11 +1472,12 @@ case!(symfile_x_symfile_diff_follow {
         "EXTRA-FILE: b/target-b",
     ],
     // Targets differ → DIFFERENT-SYMLINK-TARGET
+    // Cat2: resolved files counted as separate items (+1 orig, +1 backup)
     // With --follow, resolved files have same content → similarity for entry
     // "target-a" only in orig → MISSING-FILE
     // "target-b" only in backup → EXTRA-FILE
-    original_processed: 3,
-    backup_processed: 3,
+    original_processed: 4,
+    backup_processed: 4,
     missing: 1,
     different: 1,
     extras: 1,
@@ -1507,13 +1540,14 @@ case!(symdir_x_symdir_diff_follow {
         "EXTRA-DIR: b/target-b",
     ],
     // Targets differ → DIFFERENT-SYMLINK-TARGET
+    // Cat2: resolved dir+children counted as separate items (+1 orig, +1 backup each)
     // With --follow, entry resolves to dir → compare_recursive
     //   entry/child matches → similarity
     //   entry/child2 differs → different
     // "target-a" only in orig → MISSING-DIR (+ 2 children counted)
     // "target-b" only in backup → EXTRA-DIR (+ 2 children counted)
-    original_processed: 7,
-    backup_processed: 7,
+    original_processed: 8,
+    backup_processed: 8,
     missing: 3,
     different: 2,
     extras: 3,
@@ -1560,9 +1594,10 @@ case!(symdangling_x_symdangling_diff_follow {
         "DANGLING-SYMLINK: b/entry",
     ],
     // Targets differ → DIFFERENT-SYMLINK-TARGET, both dangling = 2 errors
+    // Cat2: resolved (dangling) content counted as separate items (+1 orig, +1 backup)
     // TODO: update when dangling symlink counter is added
-    original_processed: 2,
-    backup_processed: 2,
+    original_processed: 3,
+    backup_processed: 3,
     missing: 0,
     different: 1,
     extras: 0,
@@ -1619,18 +1654,20 @@ case!(symfile_x_symdir_diff_follow {
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
         "DIFFERENT-TYPE: a/entry",
+        "MISSING-FILE: a/entry",
         "EXTRA-DIR: b/entry",
         "MISSING-FILE: a/target-a",
         "EXTRA-DIR: b/target-b",
     ],
     // Targets differ → DIFFERENT-SYMLINK-TARGET
-    // With --follow, entry resolves to file vs dir → DIFFERENT-TYPE (file vs dir)
-    //   report_extra on backup entry dir counts entry + entry/child = 2 extras
+    // Cat2: resolved content counted as separate items
+    // Cat1: both sides reported → MISSING-FILE + EXTRA-DIR
+    // With --follow, entry resolves to file vs dir → DIFFERENT-TYPE + MISSING-FILE + EXTRA-DIR (+ child)
     // "target-a" only in orig → MISSING-FILE
     // "target-b" dir only in backup → EXTRA-DIR (+ child counted)
-    original_processed: 3,
-    backup_processed: 5,
-    missing: 1,
+    original_processed: 4,
+    backup_processed: 6,
+    missing: 2,
     different: 2,
     extras: 4,
     not_a_file_or_dir: 0,
@@ -1678,14 +1715,17 @@ case!(symfile_x_symdangling_diff_follow {
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
         "DANGLING-SYMLINK: b/entry",
+        "MISSING-FILE: a/entry",
         "MISSING-FILE: a/target-a",
     ],
     // Targets differ → DIFFERENT-SYMLINK-TARGET
-    // Backup is dangling → DANGLING-SYMLINK (error)
+    // Cat2: resolved content counted as separate items
+    // Backup dangling → DANGLING-SYMLINK (error), inc_backup_items
+    // Orig entry resolves to file → report(entry, Missing): MISSING-FILE
     // "target-a" only in orig → MISSING-FILE
-    original_processed: 3,
-    backup_processed: 2,
-    missing: 1,
+    original_processed: 4,
+    backup_processed: 3,
+    missing: 2,
     different: 1,
     extras: 0,
     not_a_file_or_dir: 0,
@@ -1735,15 +1775,17 @@ case!(symdir_x_symdangling_diff_follow {
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
         "DANGLING-SYMLINK: b/entry",
+        "MISSING-DIR: a/entry",
         "MISSING-DIR: a/target-a",
     ],
     // Targets differ → DIFFERENT-SYMLINK-TARGET
-    // Backup dangling → DANGLING-SYMLINK (error)
-    // Orig resolves to dir → count_recursive(orig, Missing) → entry/child counted
+    // Cat2: resolved content counted as separate items
+    // Backup dangling → DANGLING-SYMLINK (error), inc_backup_items
+    // Orig resolves to dir → report(entry, Missing): dir(1) + child(1) counted as missing
     // "target-a" dir only in orig → MISSING-DIR (+ child counted)
-    original_processed: 5,
-    backup_processed: 2,
-    missing: 3,
+    original_processed: 6,
+    backup_processed: 3,
+    missing: 4,
     different: 1,
     extras: 0,
     not_a_file_or_dir: 0,
@@ -1768,14 +1810,15 @@ case!(symfile_x_symdir_same_target {
     lines: [
         "SYMLINK: a/entry",
         "DIFFERENT-TYPE: a/target",
+        "MISSING-FILE: a/target",
         "EXTRA-DIR: b/target",
     ],
     // Same symlink target → SYMLINK (skipped), similarity
     // "target" is file in orig vs dir in backup → DIFFERENT-TYPE
-    //   report_extra on backup dir prints EXTRA-DIR + counts child = 2 extras
+    //   Both sides reported: MISSING-FILE + EXTRA-DIR (+ child counted)
     original_processed: 3,
     backup_processed: 4,
-    missing: 0,
+    missing: 1,
     different: 1,
     extras: 2,
     not_a_file_or_dir: 0,
@@ -1797,19 +1840,24 @@ case!(symfile_x_symdir_same_target_follow {
     flags: ["--follow"],
     lines: [
         "DIFFERENT-TYPE: a/entry",
+        "MISSING-FILE: a/entry",
         "EXTRA-DIR: b/entry",
         "DIFFERENT-TYPE: a/target",
+        "MISSING-FILE: a/target",
         "EXTRA-DIR: b/target",
     ],
-    // With --follow, entry resolves: file vs dir → DIFFERENT-TYPE + EXTRA-DIR (+ child)
-    // "target" also file vs dir → DIFFERENT-TYPE + EXTRA-DIR (+ child)
-    original_processed: 3,
-    backup_processed: 5,
-    missing: 0,
+    // Cat2: resolved content counted as separate items
+    // Cat1: both sides reported in type mismatch → MISSING-FILE + EXTRA-DIR
+    // With --follow, entry resolves: file vs dir → DIFFERENT-TYPE + MISSING-FILE + EXTRA-DIR (+ child)
+    // "target" also file vs dir → DIFFERENT-TYPE + MISSING-FILE + EXTRA-DIR (+ child)
+    // Cat4: same-target symlink pair counted as similarity
+    original_processed: 4,
+    backup_processed: 6,
+    missing: 2,
     different: 2,
     extras: 4,
     not_a_file_or_dir: 0,
-    similarities: 1,
+    similarities: 2,
     skipped: 0,
     errors: 0,
 });
@@ -1851,13 +1899,17 @@ case!(symfile_x_symdangling_same_target_follow {
     flags: ["--follow"],
     lines: [
         "DANGLING-SYMLINK: b/entry",
+        "MISSING-FILE: a/entry",
         "MISSING-FILE: a/target",
     ],
+    // Cat2: resolved content counted as separate items
+    // Cat4: same-target symlink pair counted as similarity
     // Same target → similarity. Backup dangling → DANGLING-SYMLINK (error)
+    // Orig entry resolves to file → report(entry, Missing): MISSING-FILE
     // "target" file only in orig → MISSING-FILE
-    original_processed: 3,
-    backup_processed: 2,
-    missing: 1,
+    original_processed: 4,
+    backup_processed: 3,
+    missing: 2,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 0,
@@ -1905,14 +1957,17 @@ case!(symdir_x_symdangling_same_target_follow {
     flags: ["--follow"],
     lines: [
         "DANGLING-SYMLINK: b/entry",
+        "MISSING-DIR: a/entry",
         "MISSING-DIR: a/target",
     ],
+    // Cat2: resolved content counted as separate items
+    // Cat4: same-target symlink pair counted as similarity
     // Same target → similarity. Backup dangling → DANGLING-SYMLINK (error)
-    // Orig entry resolves to dir → entry/child counted as missing
+    // Orig entry resolves to dir → report(entry, Missing): dir(1) + child(1) counted as missing
     // "target" dir only in orig → MISSING-DIR (+ child counted)
-    original_processed: 5,
-    backup_processed: 2,
-    missing: 3,
+    original_processed: 6,
+    backup_processed: 3,
+    missing: 4,
     different: 0,
     extras: 0,
     not_a_file_or_dir: 0,
