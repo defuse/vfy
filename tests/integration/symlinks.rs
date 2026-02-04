@@ -543,8 +543,8 @@ fn dangling_symlinks_same_target_with_follow() {
         output
     );
     assert!(
-        output.contains("Missing/different: 0"),
-        "Expected Missing/different: 0 (dangling is an error, not a difference), got:\n{}",
+        output.contains("Missing: 0"),
+        "Expected Missing: 0 (dangling is an error, not a difference), got:\n{}",
         output
     );
     assert!(

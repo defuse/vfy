@@ -19,7 +19,8 @@ fn identical() {
                 .and(predicate::str::contains("ERROR").not())
                 .and(predicate::str::contains("Original items processed: 4"))
                 .and(predicate::str::contains("Backup items processed: 4"))
-                .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 0 (0.00%)"))
                 .and(predicate::str::contains("Extras: 0"))
                 .and(predicate::str::contains("Similarities: 4"))
                 .and(predicate::str::contains("Skipped: 0"))
@@ -46,7 +47,8 @@ fn missing_file() {
 
     assert!(output.contains("Original items processed: 3"));
     assert!(output.contains("Backup items processed: 2"));
-    assert!(output.contains("Missing/different: 1 (33.33%)"));
+    assert!(output.contains("Missing: 1 (33.33%)"));
+    assert!(output.contains("Different: 0 (0.00%)"));
     assert!(output.contains("Extras: 0"));
     assert!(output.contains("Similarities: 2"));
 }
@@ -67,7 +69,8 @@ fn extras() {
                 .and(predicate::str::contains("DIFFERENT-FILE").not())
                 .and(predicate::str::contains("Original items processed: 2"))
                 .and(predicate::str::contains("Backup items processed: 5"))
-                .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 0 (0.00%)"))
                 .and(predicate::str::contains("Extras: 3"))
                 .and(predicate::str::contains("Similarities: 2")),
         );
@@ -84,7 +87,8 @@ fn different_size() {
             predicate::str::contains("DIFFERENT-FILE [SIZE]:")
                 .and(predicate::str::contains("file.txt"))
                 .and(predicate::str::contains("Original items processed: 2"))
-                .and(predicate::str::contains("Missing/different: 1 (50.00%)"))
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 1 (50.00%)"))
                 .and(predicate::str::contains("Similarities: 1")),
         );
 }
@@ -99,7 +103,8 @@ fn different_content_no_check() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE")
                 .not()
-                .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 0 (0.00%)"))
                 .and(predicate::str::contains("Similarities: 2")),
         );
 }
@@ -114,7 +119,8 @@ fn different_content_hash() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [HASH]:")
                 .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing/different: 1 (50.00%)"))
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 1 (50.00%)"))
                 .and(predicate::str::contains("Similarities: 1")),
         );
 }
@@ -129,7 +135,8 @@ fn different_content_sample() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [SAMPLE]:")
                 .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing/different: 1 (50.00%)"))
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 1 (50.00%)"))
                 .and(predicate::str::contains("Similarities: 1")),
         );
 }
@@ -144,7 +151,8 @@ fn different_size_and_hash() {
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [SIZE]:")
                 .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing/different: 1 (50.00%)")),
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 1 (50.00%)")),
         );
 }
 
@@ -207,7 +215,8 @@ fn nested() {
 
     assert!(output.contains("Original items processed: 7"));
     assert!(output.contains("Backup items processed: 5"));
-    assert!(output.contains("Missing/different: 4 (57.14%)"));
+    assert!(output.contains("Missing: 4 (57.14%)"));
+    assert!(output.contains("Different: 0 (0.00%)"));
     assert!(output.contains("Extras: 2"));
     assert!(output.contains("Similarities: 3"));
 }
@@ -231,7 +240,8 @@ fn nested_vv() {
 
     // Summary counts unchanged by verbosity
     assert!(output.contains("Original items processed: 7"));
-    assert!(output.contains("Missing/different: 4 (57.14%)"));
+    assert!(output.contains("Missing: 4 (57.14%)"));
+    assert!(output.contains("Different: 0 (0.00%)"));
     assert!(output.contains("Extras: 2"));
     assert!(output.contains("Similarities: 3"));
 }

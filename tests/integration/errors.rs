@@ -107,8 +107,10 @@ fn type_mismatch_summary() {
     // name_b: TYPE mismatch (file vs dir), MISSING-FILE + EXTRA-DIR (dir + child.txt)
     assert!(output.contains("Original items processed: 5"), "got:\n{}", output);
     assert!(output.contains("Backup items processed: 5"), "got:\n{}", output);
-    // Missing/different: name_a (type) + name_a (missing-dir) + name_a/child.txt (missing) + name_b (type) + name_b (missing-file) = 5
-    assert!(output.contains("Missing/different: 5"), "got:\n{}", output);
+    // Missing: name_a (missing-dir) + name_a/child.txt (missing) + name_b (missing-file) = 3
+    assert!(output.contains("Missing: 3"), "got:\n{}", output);
+    // Different: name_a (type) + name_b (type) = 2
+    assert!(output.contains("Different: 2"), "got:\n{}", output);
     // Extras: name_a (extra-file) + name_b (extra-dir) + name_b/child.txt = 3
     assert!(output.contains("Extras: 3"), "got:\n{}", output);
     // Similarities: root + same.txt = 2
@@ -232,7 +234,7 @@ fn errors_cause_nonzero_exit() {
         output
     );
     assert!(
-        output.contains("Missing/different: 0"),
+        output.contains("Missing: 0"),
         "Expected no differences, got:\n{}",
         output
     );

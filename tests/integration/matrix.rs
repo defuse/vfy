@@ -256,8 +256,8 @@ fn run_and_check(
     }
 
     // Check summary counts
-    let md = counts.missing + counts.different;
-    let expect_exit_0 = md == 0
+    let expect_exit_0 = counts.missing == 0
+        && counts.different == 0
         && counts.extras == 0
         && counts.not_a_file_or_dir == 0
         && counts.errors == 0;
@@ -265,7 +265,8 @@ fn run_and_check(
     let checks = [
         format!("Original items processed: {}", counts.original_processed),
         format!("Backup items processed: {}", counts.backup_processed),
-        format!("Missing/different: {}", md),
+        format!("Missing: {}", counts.missing),
+        format!("Different: {}", counts.different),
         format!("Extras: {}", counts.extras),
         format!("Not a file or dir: {}", counts.not_a_file_or_dir),
         format!("Similarities: {}", counts.similarities),

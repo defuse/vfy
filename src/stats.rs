@@ -68,9 +68,13 @@ impl Stats {
         let orig = self.original_items.load(Ordering::Relaxed);
         let missing = self.missing.load(Ordering::Relaxed);
         let different = self.different.load(Ordering::Relaxed);
-        let missing_different = missing + different;
-        let pct = if orig > 0 {
-            (missing_different as f64 / orig as f64) * 100.0
+        let missing_pct = if orig > 0 {
+            (missing as f64 / orig as f64) * 100.0
+        } else {
+            0.0
+        };
+        let different_pct = if orig > 0 {
+            (different as f64 / orig as f64) * 100.0
         } else {
             0.0
         };
@@ -79,7 +83,8 @@ impl Stats {
             "SUMMARY:\n\
              \x20   Original items processed: {}\n\
              \x20   Backup items processed: {}\n\
-             \x20   Missing/different: {} ({:.2}%)\n\
+             \x20   Missing: {} ({:.2}%)\n\
+             \x20   Different: {} ({:.2}%)\n\
              \x20   Extras: {}\n\
              \x20   Not a file or dir: {}\n\
              \x20   Similarities: {}\n\
@@ -87,7 +92,8 @@ impl Stats {
              \x20   Errors: {}",
             orig,
             self.backup_items.load(Ordering::Relaxed),
-            missing_different, pct,
+            missing, missing_pct,
+            different, different_pct,
             self.extras.load(Ordering::Relaxed),
             self.not_a_file_or_dir.load(Ordering::Relaxed),
             self.similarities.load(Ordering::Relaxed),

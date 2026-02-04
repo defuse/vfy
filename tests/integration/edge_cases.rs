@@ -23,7 +23,8 @@ fn empty_directories() {
         .stdout(
             predicate::str::contains("Original items processed: 1")
                 .and(predicate::str::contains("Backup items processed: 1"))
-                .and(predicate::str::contains("Missing/different: 0 (0.00%)"))
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 0 (0.00%)"))
                 .and(predicate::str::contains("Extras: 0"))
                 .and(predicate::str::contains("Similarities: 1"))
                 .and(predicate::str::contains("Errors: 0")),
@@ -134,7 +135,7 @@ fn extras_with_zero_originals() {
         output
     );
     assert!(
-        output.contains("Missing/different: 0 (0.00%)"),
+        output.contains("Missing: 0 (0.00%)"),
         "got:\n{}",
         output
     );
@@ -185,7 +186,7 @@ fn mixed_results_per_file() {
         output
     );
     assert!(
-        output.contains("Missing/different: 2"),
+        output.contains("Different: 2"),
         "got:\n{}",
         output
     );

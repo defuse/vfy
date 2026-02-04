@@ -182,6 +182,26 @@ fn verbose_files() {
 }
 
 #[test]
+fn triple_verbose_errors() {
+    let (a, b) = testdata("identical");
+    cmd()
+        .args([&a, &b, "-vvv"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("at most twice"));
+}
+
+#[test]
+fn quadruple_verbose_errors() {
+    let (a, b) = testdata("identical");
+    cmd()
+        .args([&a, &b, "-v", "-v", "-v", "-v"])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("specified 4 times"));
+}
+
+#[test]
 fn verbose_blake3_known_hashes() {
     let (a, b) = testdata("identical");
     let assert = cmd()
@@ -231,7 +251,8 @@ fn sample_and_hash_combined() {
         .code(1)
         .stdout(
             predicate::str::contains("DIFFERENT-FILE [SAMPLE]:")
-                .and(predicate::str::contains("Missing/different: 1 (50.00%)")),
+                .and(predicate::str::contains("Missing: 0 (0.00%)"))
+                .and(predicate::str::contains("Different: 1 (50.00%)")),
         );
 }
 
@@ -490,8 +511,8 @@ fn ignore_subdir_inside_missing_dir() {
     );
     // Missing: missing.txt(1) + sub3(1) = 2
     assert!(
-        output.contains("Missing/different: 2"),
-        "Expected Missing/different: 2, got:\n{}",
+        output.contains("Missing: 2"),
+        "Expected Missing: 2, got:\n{}",
         output
     );
     assert!(
@@ -834,4 +855,132 @@ fn ignore_path_through_symlinked_root_errors() {
         .stderr(predicate::str::contains("not within"));
 
     let _ = std::fs::remove_dir_all(&tmp);
+}
+
+// ── --ignore with relative paths (exercises normalize_path) ──
+
+#[test]
+fn ignore_relative_path_with_dot_component() {
+    // Relative path with ./ should be normalized and work correctly.
+    // Run from the testdata/nested directory, ignore "./a/sub3"
+    let base = testdata_base("nested");
+    let (a, b) = testdata("nested");
+
+    let assert = cmd()
+        .current_dir(&base)
+        .args([&a, &b, "-i", "./a/sub3"])
+        .assert();
+    let output = stdout_of(&assert);
+
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "sub3"),
+        "sub3 should be skipped via relative --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_relative_path_with_parent_component() {
+    // Relative path with ../ should be normalized and resolved correctly.
+    // Run from testdata/nested/a, ignore "../a/sub3" (goes up then back down)
+    let base = testdata_base("nested");
+    let (a, b) = testdata("nested");
+
+    let assert = cmd()
+        .current_dir(base.join("a"))
+        .args([&a, &b, "-i", "../a/sub3"])
+        .assert();
+    let output = stdout_of(&assert);
+
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "sub3"),
+        "sub3 should be skipped via ../ relative --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_relative_path_complex_normalization() {
+    // Path with lots of redundant ./ and ../ components:
+    // ./a/../a/./sub3/../sub3/./
+    // Should normalize to <cwd>/a/sub3
+    let base = testdata_base("nested");
+    let (a, b) = testdata("nested");
+
+    let assert = cmd()
+        .current_dir(&base)
+        .args([&a, &b, "-i", "./a/../a/./sub3/../sub3/."])
+        .assert();
+    let output = stdout_of(&assert);
+
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "sub3"),
+        "sub3 should be skipped via complex relative --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_relative_path_deeply_nested_parent_refs() {
+    // Go deep then climb back out: a/sub3/deep/../../sub3
+    // From testdata/nested, this should resolve to <base>/a/sub3
+    let base = testdata_base("nested");
+    let (a, b) = testdata("nested");
+
+    let assert = cmd()
+        .current_dir(&base)
+        .args([&a, &b, "-i", "a/sub3/deep/../../sub3"])
+        .assert();
+    let output = stdout_of(&assert);
+
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "sub3"),
+        "sub3 should be skipped via deeply nested ../ path, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
+}
+
+#[test]
+fn ignore_relative_path_bare_name() {
+    // Just a bare relative name, no ./ or ../ — still triggers the relative branch
+    // Run from testdata/nested/a so "sub3" resolves to testdata/nested/a/sub3
+    let base = testdata_base("nested");
+    let (a, b) = testdata("nested");
+
+    let assert = cmd()
+        .current_dir(base.join("a"))
+        .args([&a, &b, "-i", "sub3"])
+        .assert();
+    let output = stdout_of(&assert);
+
+    assert!(
+        !some_line_has(&output, "MISSING-DIR:", "sub3"),
+        "sub3 should be skipped via bare relative --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1, got:\n{}",
+        output
+    );
 }
