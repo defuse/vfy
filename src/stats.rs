@@ -8,7 +8,7 @@ pub struct Stats {
     different: AtomicU64,
     similarities: AtomicU64,
     extras: AtomicU64,
-    not_a_file_or_dir: AtomicU64,
+    special_files: AtomicU64,
     skipped: AtomicU64,
     errors: AtomicU64,
 }
@@ -22,7 +22,7 @@ impl Stats {
             different: AtomicU64::new(0),
             similarities: AtomicU64::new(0),
             extras: AtomicU64::new(0),
-            not_a_file_or_dir: AtomicU64::new(0),
+            special_files: AtomicU64::new(0),
             skipped: AtomicU64::new(0),
             errors: AtomicU64::new(0),
         }
@@ -52,8 +52,8 @@ impl Stats {
         self.extras.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn inc_not_a_file_or_dir(&self) {
-        self.not_a_file_or_dir.fetch_add(1, Ordering::Relaxed);
+    pub fn inc_special_files(&self) {
+        self.special_files.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn inc_skipped(&self) {
@@ -86,7 +86,7 @@ impl Stats {
              \x20   Missing: {} ({:.2}%)\n\
              \x20   Different: {} ({:.2}%)\n\
              \x20   Extras: {}\n\
-             \x20   Not a file or dir: {}\n\
+             \x20   Special files: {}\n\
              \x20   Similarities: {}\n\
              \x20   Skipped: {}\n\
              \x20   Errors: {}",
@@ -95,7 +95,7 @@ impl Stats {
             missing, missing_pct,
             different, different_pct,
             self.extras.load(Ordering::Relaxed),
-            self.not_a_file_or_dir.load(Ordering::Relaxed),
+            self.special_files.load(Ordering::Relaxed),
             self.similarities.load(Ordering::Relaxed),
             self.skipped.load(Ordering::Relaxed),
             self.errors.load(Ordering::Relaxed),
@@ -115,7 +115,7 @@ impl Stats {
         self.missing.load(Ordering::Relaxed) > 0
             || self.different.load(Ordering::Relaxed) > 0
             || self.extras.load(Ordering::Relaxed) > 0
-            || self.not_a_file_or_dir.load(Ordering::Relaxed) > 0
+            || self.special_files.load(Ordering::Relaxed) > 0
             || self.errors.load(Ordering::Relaxed) > 0
     }
 }

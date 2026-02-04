@@ -222,7 +222,7 @@ fn deep_identical_tree() {
 fn symlink_to_dev_dir_with_follow() {
     // Symlink to /dev/ — contains character devices (null, zero, etc.)
     // With --follow, the tool traverses into /dev/ and should report
-    // NOT_A_FILE_OR_DIR for device files, not ERROR or silent pass.
+    // SPECIAL-FILE for device files, not ERROR or silent pass.
     let tmp = std::env::temp_dir().join("bv_test_dev_dir");
     let _ = std::fs::remove_dir_all(&tmp);
     let a = tmp.join("a");
@@ -244,34 +244,34 @@ fn symlink_to_dev_dir_with_follow() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // /dev/ has character devices like null, zero — should trigger NOT_A_FILE_OR_DIR
+    // /dev/ has character devices like null, zero — should trigger SPECIAL-FILE
     let not_a_file_lines: Vec<&str> = output
         .lines()
-        .filter(|l| l.contains("NOT_A_FILE_OR_DIR:"))
+        .filter(|l| l.contains("SPECIAL-FILE:"))
         .collect();
     assert!(
         !not_a_file_lines.is_empty(),
-        "Expected NOT_A_FILE_OR_DIR for device files in /dev/, got:\n{}",
+        "Expected SPECIAL-FILE for device files in /dev/, got:\n{}",
         output
     );
 
-    // /dev/null specifically should be NOT_A_FILE_OR_DIR, not ERROR
+    // /dev/null specifically should be SPECIAL-FILE, not ERROR
     assert!(
-        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "null"),
-        "Expected NOT_A_FILE_OR_DIR for /dev/null, got:\n{}",
+        some_line_has(&output, "SPECIAL-FILE:", "null"),
+        "Expected SPECIAL-FILE for /dev/null, got:\n{}",
         output
     );
     assert!(
         no_line_has(&output, "ERROR:", "null"),
-        "/dev/null should be NOT_A_FILE_OR_DIR, not ERROR, got:\n{}",
+        "/dev/null should be SPECIAL-FILE, not ERROR, got:\n{}",
         output
     );
 
     // Summary should show at least 2 not-a-file-or-dir (/dev/null and /dev/urandom at minimum)
     let naf_line = output
         .lines()
-        .find(|l| l.contains("Not a file or dir:"))
-        .expect("Expected 'Not a file or dir' in summary");
+        .find(|l| l.contains("Special files:"))
+        .expect("Expected 'Special files' in summary");
     let naf_count: u64 = naf_line
         .trim()
         .rsplit(' ')
@@ -375,7 +375,7 @@ fn special_files_extra_in_backup() {
 #[test]
 fn special_file_via_symlink_follow() {
     // Symlink to /dev/urandom is a character device (not a file, not a dir).
-    // With --follow, the tool should detect this and report NOT_A_FILE_OR_DIR
+    // With --follow, the tool should detect this and report SPECIAL-FILE
     // instead of trying to compare it as a regular file.
     let tmp = std::env::temp_dir().join("bv_test_special_file");
     let _ = std::fs::remove_dir_all(&tmp);
@@ -403,8 +403,8 @@ fn special_file_via_symlink_follow() {
     let _ = std::fs::remove_dir_all(&tmp);
 
     assert!(
-        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "special"),
-        "Expected NOT_A_FILE_OR_DIR for symlink to /dev/urandom, got:\n{}",
+        some_line_has(&output, "SPECIAL-FILE:", "special"),
+        "Expected SPECIAL-FILE for symlink to /dev/urandom, got:\n{}",
         output
     );
     // Cat4: same-target symlink pair counted as similarity (root + symlink pair + ok.txt = 3)
@@ -415,14 +415,14 @@ fn special_file_via_symlink_follow() {
     );
     // Should be counted in the not-a-file-or-dir summary (one per side)
     assert!(
-        output.contains("Not a file or dir: 2"),
-        "Expected 'Not a file or dir: 2' in summary, got:\n{}",
+        output.contains("Special files: 2"),
+        "Expected 'Special files: 2' in summary, got:\n{}",
         output
     );
     // Should not produce ERROR — this is an expected condition, not an I/O failure
     assert!(
         no_line_has(&output, "ERROR:", "special"),
-        "Special file should be NOT_A_FILE_OR_DIR, not ERROR, got:\n{}",
+        "Special file should be SPECIAL-FILE, not ERROR, got:\n{}",
         output
     );
 }
@@ -431,7 +431,7 @@ fn special_file_via_symlink_follow() {
 
 #[test]
 fn special_file_missing_from_backup() {
-    // A FIFO in original but absent from backup should be NOT_A_FILE_OR_DIR,
+    // A FIFO in original but absent from backup should be SPECIAL-FILE,
     // not MISSING-FILE.
     let tmp = std::env::temp_dir().join("bv_test_fifo_missing");
     let _ = std::fs::remove_dir_all(&tmp);
@@ -458,10 +458,10 @@ fn special_file_missing_from_backup() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // A special file missing from backup should be NOT_A_FILE_OR_DIR, not MISSING-FILE
+    // A special file missing from backup should be SPECIAL-FILE, not MISSING-FILE
     assert!(
-        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "my_fifo"),
-        "Expected NOT_A_FILE_OR_DIR for missing FIFO, got:\n{}",
+        some_line_has(&output, "SPECIAL-FILE:", "my_fifo"),
+        "Expected SPECIAL-FILE for missing FIFO, got:\n{}",
         output
     );
     assert!(
@@ -473,7 +473,7 @@ fn special_file_missing_from_backup() {
 
 #[test]
 fn special_file_extra_in_backup() {
-    // A FIFO in backup but absent from original should be NOT_A_FILE_OR_DIR,
+    // A FIFO in backup but absent from original should be SPECIAL-FILE,
     // not EXTRA-FILE.
     let tmp = std::env::temp_dir().join("bv_test_fifo_extra");
     let _ = std::fs::remove_dir_all(&tmp);
@@ -500,10 +500,10 @@ fn special_file_extra_in_backup() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // An extra special file in backup should be NOT_A_FILE_OR_DIR, not EXTRA-FILE
+    // An extra special file in backup should be SPECIAL-FILE, not EXTRA-FILE
     assert!(
-        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "my_fifo"),
-        "Expected NOT_A_FILE_OR_DIR for extra FIFO, got:\n{}",
+        some_line_has(&output, "SPECIAL-FILE:", "my_fifo"),
+        "Expected SPECIAL-FILE for extra FIFO, got:\n{}",
         output
     );
     assert!(
@@ -518,7 +518,7 @@ fn special_file_extra_in_backup() {
 #[test]
 fn special_file_vs_symlink() {
     // One side has a FIFO, the other has a symlink with the same name.
-    // Should be NOT_A_FILE_OR_DIR, not DIFFERENT-SYMLINK-STATUS.
+    // Should be SPECIAL-FILE, not DIFFERENT-SYMLINK-STATUS.
     let tmp = std::env::temp_dir().join("bv_test_fifo_vs_symlink");
     let _ = std::fs::remove_dir_all(&tmp);
     let a = tmp.join("a");
@@ -544,10 +544,10 @@ fn special_file_vs_symlink() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // Special file should always be NOT_A_FILE_OR_DIR regardless of what the other side is
+    // Special file should always be SPECIAL-FILE regardless of what the other side is
     assert!(
-        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "entry"),
-        "Expected NOT_A_FILE_OR_DIR when one side is a FIFO, got:\n{}",
+        some_line_has(&output, "SPECIAL-FILE:", "entry"),
+        "Expected SPECIAL-FILE when one side is a FIFO, got:\n{}",
         output
     );
     assert!(
@@ -586,8 +586,8 @@ fn symlink_vs_special_file() {
     let _ = std::fs::remove_dir_all(&tmp);
 
     assert!(
-        some_line_has(&output, "NOT_A_FILE_OR_DIR:", "entry"),
-        "Expected NOT_A_FILE_OR_DIR when one side is a FIFO, got:\n{}",
+        some_line_has(&output, "SPECIAL-FILE:", "entry"),
+        "Expected SPECIAL-FILE when one side is a FIFO, got:\n{}",
         output
     );
     assert!(

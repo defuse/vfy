@@ -72,7 +72,7 @@ fn dir_in_original_file_in_backup() {
 
     // name_a is a dir in a/, a file in b/
     assert!(
-        some_line_has(&output, "DIFFERENT-TYPE:", "name_a"),
+        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_a"),
         "Expected DIFFERENT-FILE [TYPE] for name_a (dir vs file), got:\n{}",
         output
     );
@@ -87,7 +87,7 @@ fn file_in_original_dir_in_backup() {
 
     // name_b is a file in a/, a dir in b/
     assert!(
-        some_line_has(&output, "DIFFERENT-TYPE:", "name_b"),
+        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_b"),
         "Expected DIFFERENT-FILE [TYPE] for name_b (file vs dir), got:\n{}",
         output
     );
@@ -127,7 +127,7 @@ fn type_mismatch_dir_orig_counts_missing_contents() {
 
     // name_a is a dir in a/ with child.txt, a file in b/
     assert!(
-        some_line_has(&output, "DIFFERENT-TYPE:", "name_a"),
+        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_a"),
         "Expected type mismatch for name_a, got:\n{}",
         output
     );
@@ -149,7 +149,7 @@ fn type_mismatch_dir_backup_counts_extra_contents() {
 
     // name_b is a file in a/, a dir in b/ with child.txt
     assert!(
-        some_line_has(&output, "DIFFERENT-TYPE:", "name_b"),
+        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_b"),
         "Expected type mismatch for name_b, got:\n{}",
         output
     );

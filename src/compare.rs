@@ -200,14 +200,14 @@ fn compare(
     // --- Special files ---
     if matches!(meta_orig, Meta::Special) {
         stats.inc_original_items();
-        println!("NOT_A_FILE_OR_DIR: [{}]", orig.display());
-        stats.inc_not_a_file_or_dir();
+        println!("SPECIAL-FILE: [{}]", orig.display());
+        stats.inc_special_files();
     }
 
     if matches!(meta_back, Meta::Special) {
         stats.inc_backup_items();
-        println!("NOT_A_FILE_OR_DIR: [{}]", backup.display());
-        stats.inc_not_a_file_or_dir();
+        println!("SPECIAL-FILE: [{}]", backup.display());
+        stats.inc_special_files();
     }
 
     if matches!(meta_orig, Meta::Special) && matches!(meta_back, Meta::Special) {
@@ -254,10 +254,10 @@ fn compare(
         );
         stats.inc_different();
     } else if matches!(meta_orig, Meta::File(_)) && matches!(meta_back, Meta::Dir(_, _)) {
-        println!("DIFFERENT-TYPE: [{}] (file vs dir)", orig.display());
+        println!("FILE-DIR-MISMATCH: [{}] (file vs dir)", orig.display());
         stats.inc_different();
     } else if matches!(meta_orig, Meta::Dir(_, _)) && matches!(meta_back, Meta::File(_)) {
-        println!("DIFFERENT-TYPE: [{}] (dir vs file)", orig.display());
+        println!("FILE-DIR-MISMATCH: [{}] (dir vs file)", orig.display());
         stats.inc_different();
     }
 
@@ -506,9 +506,9 @@ fn report(
 
     if matches!(meta, Meta::Special) {
         if print {
-            println!("NOT_A_FILE_OR_DIR: [{}]", path.display());
+            println!("SPECIAL-FILE: [{}]", path.display());
         }
-        stats.inc_not_a_file_or_dir();
+        stats.inc_special_files();
         return;
     }
 

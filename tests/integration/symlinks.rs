@@ -504,7 +504,7 @@ fn file_symlink_without_follow_reports_skip() {
 fn dangling_symlinks_same_target_with_follow() {
     // Both sides have dangling symlinks to the same nonexistent target.
     // With --follow, the targets can't be resolved. Should report
-    // DANGLING-SYMLINK: to indicate we couldn't follow, not NOT_A_FILE_OR_DIR.
+    // DANGLING-SYMLINK: to indicate we couldn't follow, not SPECIAL-FILE.
     let tmp = std::env::temp_dir().join("bv_test_dangling_follow");
     let _ = std::fs::remove_dir_all(&tmp);
     let a = tmp.join("a");
@@ -523,10 +523,10 @@ fn dangling_symlinks_same_target_with_follow() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 
-    // Should NOT be NOT_A_FILE_OR_DIR — these are dangling symlinks, not special files
+    // Should NOT be SPECIAL-FILE — these are dangling symlinks, not special files
     assert!(
-        !some_line_has(&output, "NOT_A_FILE_OR_DIR:", "dangling"),
-        "Dangling symlinks should not be NOT_A_FILE_OR_DIR, got:\n{}",
+        !some_line_has(&output, "SPECIAL-FILE:", "dangling"),
+        "Dangling symlinks should not be SPECIAL-FILE, got:\n{}",
         output
     );
     // Should report DANGLING-SYMLINK: to indicate --follow couldn't resolve the target
@@ -591,8 +591,8 @@ fn dangling_orig_resolving_backup_file_with_follow() {
         output
     );
     assert!(
-        !some_line_has(&output, "NOT_A_FILE_OR_DIR:", "link"),
-        "Should not be NOT_A_FILE_OR_DIR, got:\n{}",
+        !some_line_has(&output, "SPECIAL-FILE:", "link"),
+        "Should not be SPECIAL-FILE, got:\n{}",
         output
     );
 }
@@ -785,7 +785,7 @@ fn symlink_same_target_orig_dir_backup_file_follow() {
 
     // The symlink resolves to dir on orig, file on backup → TYPE mismatch
     assert!(
-        some_line_has(&output, "DIFFERENT-TYPE:", "link"),
+        some_line_has(&output, "FILE-DIR-MISMATCH:", "link"),
         "Expected DIFFERENT-FILE [TYPE] for symlink resolving to dir vs file, got:\n{}",
         output
     );
@@ -830,7 +830,7 @@ fn symlink_same_target_orig_file_backup_dir_follow() {
 
     // The symlink resolves to file on orig, dir on backup → TYPE mismatch
     assert!(
-        some_line_has(&output, "DIFFERENT-TYPE:", "link"),
+        some_line_has(&output, "FILE-DIR-MISMATCH:", "link"),
         "Expected DIFFERENT-FILE [TYPE] for symlink resolving to file vs dir, got:\n{}",
         output
     );
