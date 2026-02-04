@@ -1,7 +1,5 @@
 mod cli;
-#[allow(dead_code)]
 mod compare;
-mod compare_clean;
 mod stats;
 
 use std::io::Write;
@@ -64,7 +62,7 @@ fn main() {
     })
     .expect("Error setting Ctrl-C handler");
 
-    compare_clean::compare_dirs(&config, &stats);
+    compare::compare_dirs(&config, &stats);
 
     stats.print_summary();
 
