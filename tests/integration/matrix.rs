@@ -1165,7 +1165,7 @@ case!(symlink_to_dir_x_absent {
     errors: 0,
 });
 
-// TODO: DESIRED behavior — will fail until handle_missing resolves symlinks with --follow
+// With --follow, the symlink resolves to a dir, so its contents are also counted as missing.
 case!(symlink_to_dir_x_absent_follow {
     orig: [
         Sym("entry", "target"),
@@ -1212,7 +1212,7 @@ case!(symlink_dangling_x_absent {
     errors: 0,
 });
 
-// TODO: DESIRED — will fail until handle_missing reports dangling with --follow
+// With --follow, the dangling symlink is reported as an error.
 case!(symlink_dangling_x_absent_follow {
     orig: [
         Sym("entry", "nonexistent"),

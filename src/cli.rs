@@ -14,7 +14,8 @@ Output prefixes (grep-friendly):
   EXTRA-FILE:                    File in backup not in original
   EXTRA-DIR:                     Directory in backup not in original
   EXTRA-SYMLINK:                 Symlink in backup not in original
-  DIFFERENT-FILE [reason]:       File differs (reason: first mismatch of TYPE, SIZE, SAMPLE, HASH)
+  DIFFERENT-FILE [reason]:       File differs (reason: first mismatch of SIZE, SAMPLE, HASH)
+  DIFFERENT-TYPE:                One side is a file, the other is a directory
   DIFFERENT-SYMLINK-TARGET:      Both sides are symlinks but point to different targets
   DIFFERENT-SYMLINK-STATUS:      One side is a symlink, the other is not
   NOT_A_FILE_OR_DIR:             Entry is a device, FIFO, socket, etc.
