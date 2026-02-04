@@ -111,7 +111,15 @@ fn compare_recursive(orig_dir: &Path, backup_dir: &Path, config: &Config, stats:
     }
 }
 
+// ── Both sides present ──────────────────────────────────────────────────────
+
 /// Both original and backup contain this entry.
+///
+/// Decision order (see docs/symlink-handling.md):
+///   1. Special files (device/FIFO/socket) → NOT_A_FILE_OR_DIR
+///   2. Neither is a symlink → compare as dir/file
+///   3. One is a symlink, the other is not → DIFFERENT-SYMLINK-STATUS
+///   4. Both are symlinks → handle_both_symlinks
 fn handle_both_present(
     orig_path: &Path,
     backup_path: &Path,
@@ -128,146 +136,220 @@ fn handle_both_present(
             return;
         }
     };
-
     let backup_is_symlink = backup_meta.file_type().is_symlink();
 
-    // Determine the "resolved" type of each side (following symlinks).
-    // For dangling symlinks (target doesn't exist), treat as non-dir.
-    // For other errors (e.g. permission denied on target), report ERROR.
-    let orig_is_dir = if orig_is_symlink {
-        match fs::metadata(orig_path) {
-            Ok(m) => m.is_dir(),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-            Err(e) => {
-                println!("ERROR: Cannot resolve symlink {}: {}", orig_path.display(), e);
-                stats.inc_errors();
-                return;
-            }
+    // Special files take priority over everything
+    let orig_special = is_special(orig_meta, orig_is_symlink);
+    let backup_special = is_special(&backup_meta, backup_is_symlink);
+    if orig_special || backup_special {
+        if orig_special {
+            println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
+            stats.inc_not_a_file_or_dir();
         }
-    } else {
-        orig_meta.is_dir()
-    };
-    let backup_is_dir = if backup_is_symlink {
-        match fs::metadata(backup_path) {
-            Ok(m) => m.is_dir(),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
-            Err(e) => {
-                println!("ERROR: Cannot resolve symlink {}: {}", backup_path.display(), e);
-                stats.inc_errors();
-                return;
-            }
+        if backup_special {
+            println!("NOT_A_FILE_OR_DIR: {}", backup_path.display());
+            stats.inc_not_a_file_or_dir();
         }
-    } else {
-        backup_meta.is_dir()
-    };
+        // The non-special side's content is effectively missing/extra
+        if !orig_special {
+            report_missing(orig_path, orig_meta, orig_is_symlink, config, stats);
+        }
+        if !backup_special {
+            report_extra(backup_path, &backup_meta, backup_is_symlink, config, stats);
+        }
+        return;
+    }
 
-    // If either side is a symlink, check symlink-specific logic first
-    if orig_is_symlink || backup_is_symlink {
-        // One is symlink and the other isn't → mismatch
-        if orig_is_symlink != backup_is_symlink {
-            println!("DIFFERENT-SYMLINK-STATUS: {} (symlink mismatch)", orig_path.display());
-            stats.inc_different();
+    // Neither side is a symlink → compare as dir/file
+    if !orig_is_symlink && !backup_is_symlink {
+        compare_entries(orig_path, backup_path, orig_meta, &backup_meta, config, stats);
+        return;
+    }
+
+    // One side is a symlink, the other is not
+    if orig_is_symlink != backup_is_symlink {
+        println!("DIFFERENT-SYMLINK-STATUS: {} (symlink mismatch)", orig_path.display());
+        stats.inc_different();
+        // The non-symlink side's content is effectively missing/extra
+        if !orig_is_symlink {
+            report_missing(orig_path, orig_meta, false, config, stats);
+        }
+        if !backup_is_symlink {
+            report_extra(backup_path, &backup_meta, false, config, stats);
+        }
+        return;
+    }
+
+    // Both are symlinks
+    handle_both_symlinks(orig_path, backup_path, config, stats);
+}
+
+/// True if the entry is a special file (device, FIFO, socket) — not a regular
+/// file, directory, or symlink.
+fn is_special(meta: &fs::Metadata, is_symlink: bool) -> bool {
+    !is_symlink && !meta.is_file() && !meta.is_dir()
+}
+
+// ── Both symlinks ───────────────────────────────────────────────────────────
+
+/// Both sides are symlinks. Compare targets, then either follow or skip.
+fn handle_both_symlinks(
+    orig_path: &Path,
+    backup_path: &Path,
+    config: &Config,
+    stats: &Stats,
+) {
+    // 1. Compare targets (always, regardless of --follow)
+    let orig_target = match fs::read_link(orig_path) {
+        Ok(t) => t,
+        Err(e) => {
+            println!("ERROR: Cannot read symlink target for {}: {}", orig_path.display(), e);
+            stats.inc_errors();
             return;
         }
-
-        // Both are symlinks
-        // If they point to directories: respect --follow
-        if orig_is_dir && backup_is_dir {
-            if config.follow {
-                // Traverse the symlinked directories
-                compare_recursive(orig_path, backup_path, config, stats, false);
-            } else {
-                println!(
-                    "SYMLINK: {} (symlink to directory, use --follow to traverse)",
-                    orig_path.display()
-                );
-                stats.inc_skipped();
-            }
+    };
+    let backup_target = match fs::read_link(backup_path) {
+        Ok(t) => t,
+        Err(e) => {
+            println!("ERROR: Cannot read symlink target for {}: {}", backup_path.display(), e);
+            stats.inc_errors();
             return;
         }
+    };
 
-        // Both are symlinks to non-directories: compare targets
-        let orig_target = fs::read_link(orig_path);
-        let backup_target = fs::read_link(backup_path);
-        match (orig_target, backup_target) {
-            (Ok(ot), Ok(bt)) => {
-                if ot != bt {
-                    println!(
-                        "DIFFERENT-SYMLINK-TARGET: {} (targets differ: {:?} vs {:?})",
-                        orig_path.display(),
-                        ot,
-                        bt
-                    );
-                    stats.inc_different();
-                } else if config.follow {
-                    // Targets match, but with --follow we also compare resolved content.
-                    // Check for type mismatch between resolved targets.
-                    let orig_is_file = fs::metadata(orig_path).map(|m| m.is_file()).unwrap_or(false);
-                    let backup_is_file = fs::metadata(backup_path).map(|m| m.is_file()).unwrap_or(false);
+    let targets_differ = orig_target != backup_target;
+    if targets_differ {
+        println!(
+            "DIFFERENT-SYMLINK-TARGET: {} (targets differ: {:?} vs {:?})",
+            orig_path.display(), orig_target, backup_target
+        );
+        stats.inc_different();
+    }
 
-                    if orig_is_dir && !backup_is_dir {
-                        // Original resolves to dir, backup to file
-                        println!("DIFFERENT-FILE [TYPE]: {} (dir vs file)", orig_path.display());
-                        stats.inc_different();
-                        count_recursive(orig_path, config, stats, Direction::Missing);
-                    } else if !orig_is_dir && backup_is_dir {
-                        // Original resolves to file, backup to dir
-                        println!("DIFFERENT-FILE [TYPE]: {} (file vs dir)", orig_path.display());
-                        stats.inc_different();
-                        count_recursive(backup_path, config, stats, Direction::Extra);
-                    } else if !orig_is_file || !backup_is_file {
-                        // Neither is a dir, but at least one isn't a regular file
-                        // (device, FIFO, socket, etc.)
-                        println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
-                        stats.inc_not_a_file_or_dir();
-                    } else {
-                        // Both resolve to regular files — compare content
-                        let reasons = compare_file(orig_path, backup_path, config, stats);
-                        match reasons {
-                            Some(r) if r.any() => {
-                                println!("DIFFERENT-FILE [{}]: {}", r, orig_path.display());
-                                stats.inc_different();
-                            }
-                            Some(_) => {
-                                stats.inc_similarities();
-                            }
-                            None => {
-                                // Error already reported inside compare_file
-                            }
-                        }
-                    }
-                } else {
-                    stats.inc_similarities();
-                }
+    // 2. With --follow: resolve and compare content
+    if config.follow {
+        follow_symlinks(orig_path, backup_path, targets_differ, config, stats);
+    } else {
+        // 3. Without --follow: content was not verified.
+        //    If targets match, it's a similarity (same symlink) but still skipped
+        //    (content behind it wasn't compared).
+        println!(
+            "SYMLINK: {} (symlink, use --follow to compare content)",
+            orig_path.display()
+        );
+        if !targets_differ {
+            stats.inc_similarities();
+        }
+        stats.inc_skipped();
+    }
+}
+
+/// Resolve both symlinks and compare their content. Handles dangling symlinks.
+fn follow_symlinks(
+    orig_path: &Path,
+    backup_path: &Path,
+    targets_differ: bool,
+    config: &Config,
+    stats: &Stats,
+) {
+    let orig_meta = resolve_symlink(orig_path, stats);
+    let backup_meta = resolve_symlink(backup_path, stats);
+
+    // If either resolution hit a non-NotFound error, bail (already reported)
+    let orig_meta = match orig_meta {
+        Some(m) => m,
+        None => return,
+    };
+    let backup_meta = match backup_meta {
+        Some(m) => m,
+        None => return,
+    };
+
+    let orig_dangling = orig_meta.is_none();
+    let backup_dangling = backup_meta.is_none();
+
+    if orig_dangling || backup_dangling {
+        // Report which side(s) are dangling
+        if orig_dangling {
+            println!("DANGLING-SYMLINK: {}", orig_path.display());
+            stats.inc_errors();
+        }
+        if backup_dangling {
+            println!("DANGLING-SYMLINK: {}", backup_path.display());
+            stats.inc_errors();
+        }
+        if !targets_differ {
+            // The symlinks are identical (same target), so count as a similarity.
+            stats.inc_similarities();
+        }
+
+        // If only one side is dangling, the resolved side's content is missing/extra
+        if let (Some(om), None) = (&orig_meta, &backup_meta) {
+            if om.is_dir() {
+                count_recursive(orig_path, config, stats, Direction::Missing);
             }
-            (Err(e), _) => {
-                println!("ERROR: Cannot read symlink target for {}: {}", orig_path.display(), e);
-                stats.inc_errors();
-            }
-            (_, Err(e)) => {
-                println!("ERROR: Cannot read symlink target for {}: {}", backup_path.display(), e);
-                stats.inc_errors();
+        }
+        if let (None, Some(bm)) = (&orig_meta, &backup_meta) {
+            if bm.is_dir() {
+                count_recursive(backup_path, config, stats, Direction::Extra);
             }
         }
         return;
     }
 
-    // Neither side is a symlink
-    // Check for special file types (socket, FIFO, device, etc.) before dir/file logic
+    // Both resolved — compare using dir/file/special logic
+    let orig_meta = orig_meta.unwrap();
+    let backup_meta = backup_meta.unwrap();
+    compare_entries(orig_path, backup_path, &orig_meta, &backup_meta, config, stats);
+}
+
+/// Resolve a symlink's target via fs::metadata (follows symlinks).
+/// Returns Some(Some(metadata)) if resolved, Some(None) if dangling (NotFound),
+/// or None if a non-recoverable error occurred (already reported).
+fn resolve_symlink(path: &Path, stats: &Stats) -> Option<Option<fs::Metadata>> {
+    match fs::metadata(path) {
+        Ok(m) => Some(Some(m)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some(None),
+        Err(e) => {
+            println!("ERROR: Cannot resolve symlink {}: {}", path.display(), e);
+            stats.inc_errors();
+            None
+        }
+    }
+}
+
+// ── Dir/file comparison (shared by non-symlink and followed-symlink paths) ──
+
+/// Compare two entries by their resolved metadata (dir vs dir, file vs file, etc.).
+/// Used both for non-symlink entries and for resolved symlink targets with --follow.
+fn compare_entries(
+    orig_path: &Path,
+    backup_path: &Path,
+    orig_meta: &fs::Metadata,
+    backup_meta: &fs::Metadata,
+    config: &Config,
+    stats: &Stats,
+) {
+    // Special files (symlink targets that resolve to devices, FIFOs, etc.)
     let orig_is_regular = orig_meta.is_file() || orig_meta.is_dir();
     let backup_is_regular = backup_meta.is_file() || backup_meta.is_dir();
     if !orig_is_regular || !backup_is_regular {
-        println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
-        stats.inc_not_a_file_or_dir();
+        if !orig_is_regular {
+            println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
+            stats.inc_not_a_file_or_dir();
+        }
+        if !backup_is_regular {
+            println!("NOT_A_FILE_OR_DIR: {}", backup_path.display());
+            stats.inc_not_a_file_or_dir();
+        }
         return;
     }
 
     if orig_meta.is_dir() {
         if !backup_meta.is_dir() {
-            println!("DIFFERENT-FILE [TYPE]: {} (dir vs file)", orig_path.display());
+            println!("DIFFERENT-TYPE: {} (dir vs file)", orig_path.display());
             stats.inc_different();
-            // Count the directory's contents as missing from backup
-            count_recursive(orig_path, config, stats, Direction::Missing);
+            report_missing(orig_path, orig_meta, false, config, stats);
             return;
         }
 
@@ -306,12 +388,10 @@ fn handle_both_present(
 
         compare_recursive(orig_path, backup_path, config, stats, false);
     } else {
-        // Both are regular files
         if !backup_meta.is_file() {
-            println!("DIFFERENT-FILE [TYPE]: {} (file vs dir)", orig_path.display());
+            println!("DIFFERENT-TYPE: {} (file vs dir)", orig_path.display());
             stats.inc_different();
-            // Count the backup directory's contents as extras
-            count_recursive(backup_path, config, stats, Direction::Extra);
+            report_extra(backup_path, backup_meta, false, config, stats);
             return;
         }
 
@@ -339,6 +419,8 @@ fn handle_both_present(
     }
 }
 
+// ── Missing / Extra ─────────────────────────────────────────────────────────
+
 /// Entry exists in original but not in backup.
 fn handle_missing(
     orig_path: &Path,
@@ -347,17 +429,12 @@ fn handle_missing(
     config: &Config,
     stats: &Stats,
 ) {
-    if orig_is_symlink {
-        println!("MISSING-SYMLINK: {}", orig_path.display());
-        stats.inc_missing();
-    } else if orig_meta.is_dir() {
-        println!("MISSING-DIR: {}", orig_path.display());
-        stats.inc_missing();
-        count_recursive(orig_path, config, stats, Direction::Missing);
-    } else {
-        println!("MISSING-FILE: {}", orig_path.display());
-        stats.inc_missing();
+    if is_special(orig_meta, orig_is_symlink) {
+        println!("NOT_A_FILE_OR_DIR: {}", orig_path.display());
+        stats.inc_not_a_file_or_dir();
+        return;
     }
+    report_missing(orig_path, orig_meta, orig_is_symlink, config, stats);
 }
 
 /// Entry exists in backup but not in original.
@@ -379,17 +456,70 @@ fn handle_extra(backup_path: &Path, config: &Config, stats: &Stats) {
     }
 
     stats.inc_backup_items();
-    stats.inc_extras();
 
-    if meta.is_symlink() {
-        println!("EXTRA-SYMLINK: {}", backup_path.display());
+    let is_symlink = meta.file_type().is_symlink();
+    if is_special(&meta, is_symlink) {
+        println!("NOT_A_FILE_OR_DIR: {}", backup_path.display());
+        stats.inc_not_a_file_or_dir();
+        return;
+    }
+    report_extra(backup_path, &meta, is_symlink, config, stats);
+}
+
+/// Print diagnostic line and count an entry as missing.
+fn report_missing(path: &Path, meta: &fs::Metadata, is_symlink: bool, config: &Config, stats: &Stats) {
+    if is_symlink {
+        println!("MISSING-SYMLINK: {}", path.display());
     } else if meta.is_dir() {
-        println!("EXTRA-DIR: {}", backup_path.display());
-        count_recursive(backup_path, config, stats, Direction::Extra);
+        println!("MISSING-DIR: {}", path.display());
     } else {
-        println!("EXTRA-FILE: {}", backup_path.display());
+        println!("MISSING-FILE: {}", path.display());
+    }
+    stats.inc_missing();
+    if is_symlink && config.follow {
+        // With --follow, resolve the symlink and count its contents if it's a dir
+        match fs::metadata(path) {
+            Ok(resolved) if resolved.is_dir() => {
+                count_recursive(path, config, stats, Direction::Missing);
+            }
+            Err(_) => {
+                println!("DANGLING-SYMLINK: {}", path.display());
+                stats.inc_errors();
+            }
+            _ => {}
+        }
+    } else if meta.is_dir() {
+        count_recursive(path, config, stats, Direction::Missing);
     }
 }
+
+/// Print diagnostic line and count an entry as extra.
+fn report_extra(path: &Path, meta: &fs::Metadata, is_symlink: bool, config: &Config, stats: &Stats) {
+    if is_symlink {
+        println!("EXTRA-SYMLINK: {}", path.display());
+    } else if meta.is_dir() {
+        println!("EXTRA-DIR: {}", path.display());
+    } else {
+        println!("EXTRA-FILE: {}", path.display());
+    }
+    stats.inc_extras();
+    if is_symlink && config.follow {
+        match fs::metadata(path) {
+            Ok(resolved) if resolved.is_dir() => {
+                count_recursive(path, config, stats, Direction::Extra);
+            }
+            Err(_) => {
+                println!("DANGLING-SYMLINK: {}", path.display());
+                stats.inc_errors();
+            }
+            _ => {}
+        }
+    } else if meta.is_dir() {
+        count_recursive(path, config, stats, Direction::Extra);
+    }
+}
+
+// ── Recursive counting ──────────────────────────────────────────────────────
 
 #[derive(Clone, Copy, PartialEq)]
 enum Direction {
@@ -464,6 +594,8 @@ fn count_recursive(dir: &Path, config: &Config, stats: &Stats, direction: Direct
         }
     }
 }
+
+// ── File comparison ─────────────────────────────────────────────────────────
 
 /// Compare two files. Returns None if an I/O error prevented comparison.
 fn compare_file(orig: &Path, backup: &Path, config: &Config, stats: &Stats) -> Option<DiffReasons> {
@@ -567,6 +699,8 @@ fn compare_file(orig: &Path, backup: &Path, config: &Config, stats: &Stats) -> O
 
     Some(reasons)
 }
+
+// ── Utilities ───────────────────────────────────────────────────────────────
 
 fn read_dir_entries(dir: &Path) -> Result<Vec<OsString>, std::io::Error> {
     let mut entries = Vec::new();

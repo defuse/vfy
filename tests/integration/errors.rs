@@ -72,7 +72,7 @@ fn dir_in_original_file_in_backup() {
 
     // name_a is a dir in a/, a file in b/
     assert!(
-        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "name_a"),
+        some_line_has(&output, "DIFFERENT-TYPE:", "name_a"),
         "Expected DIFFERENT-FILE [TYPE] for name_a (dir vs file), got:\n{}",
         output
     );
@@ -87,7 +87,7 @@ fn file_in_original_dir_in_backup() {
 
     // name_b is a file in a/, a dir in b/
     assert!(
-        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "name_b"),
+        some_line_has(&output, "DIFFERENT-TYPE:", "name_b"),
         "Expected DIFFERENT-FILE [TYPE] for name_b (file vs dir), got:\n{}",
         output
     );
@@ -102,14 +102,14 @@ fn type_mismatch_summary() {
 
     // a/ has: root + name_a/ (dir) + name_a/child.txt + name_b (file) + same.txt = 5 items
     // b/ has: root + name_a (file) + name_b/ (dir) + name_b/child.txt + same.txt = 5 items
-    // name_a: TYPE mismatch, a/name_a/child.txt is missing from backup
-    // name_b: TYPE mismatch, b/name_b/child.txt is extra in backup
+    // name_a: TYPE mismatch (dir vs file), name_a dir + child.txt missing
+    // name_b: TYPE mismatch (file vs dir), name_b dir + child.txt extra
     assert!(output.contains("Original items processed: 5"), "got:\n{}", output);
     assert!(output.contains("Backup items processed: 5"), "got:\n{}", output);
-    // Missing/different: name_a (type) + name_a/child.txt (missing) + name_b (type) = 3
-    assert!(output.contains("Missing/different: 3"), "got:\n{}", output);
-    // Extras: name_b/child.txt = 1
-    assert!(output.contains("Extras: 1"), "got:\n{}", output);
+    // Missing/different: name_a (type) + name_a (missing-dir) + name_a/child.txt (missing) + name_b (type) = 4
+    assert!(output.contains("Missing/different: 4"), "got:\n{}", output);
+    // Extras: name_b (extra-dir) + name_b/child.txt = 2
+    assert!(output.contains("Extras: 2"), "got:\n{}", output);
     // Similarities: root + same.txt = 2
     assert!(output.contains("Similarities: 2"), "got:\n{}", output);
 }
@@ -124,7 +124,7 @@ fn type_mismatch_dir_orig_counts_missing_contents() {
 
     // name_a is a dir in a/ with child.txt, a file in b/
     assert!(
-        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "name_a"),
+        some_line_has(&output, "DIFFERENT-TYPE:", "name_a"),
         "Expected type mismatch for name_a, got:\n{}",
         output
     );
@@ -146,7 +146,7 @@ fn type_mismatch_dir_backup_counts_extra_contents() {
 
     // name_b is a file in a/, a dir in b/ with child.txt
     assert!(
-        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "name_b"),
+        some_line_has(&output, "DIFFERENT-TYPE:", "name_b"),
         "Expected type mismatch for name_b, got:\n{}",
         output
     );

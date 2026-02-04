@@ -535,6 +535,23 @@ fn dangling_symlinks_same_target_with_follow() {
         "Expected DANGLING-SYMLINK: for unresolvable symlinks with --follow, got:\n{}",
         output
     );
+    // The symlinks are identical (same target), so count as a similarity.
+    // Dangling symlinks are errors (can't follow), not differences.
+    assert!(
+        output.contains("Similarities: 2"),
+        "Expected Similarities: 2 (1 dir + 1 matching symlink), got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Missing/different: 0"),
+        "Expected Missing/different: 0 (dangling is an error, not a difference), got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Errors: 2"),
+        "Expected Errors: 2 (both dangling symlinks), got:\n{}",
+        output
+    );
 }
 
 #[test]
@@ -768,7 +785,7 @@ fn symlink_same_target_orig_dir_backup_file_follow() {
 
     // The symlink resolves to dir on orig, file on backup → TYPE mismatch
     assert!(
-        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "link"),
+        some_line_has(&output, "DIFFERENT-TYPE:", "link"),
         "Expected DIFFERENT-FILE [TYPE] for symlink resolving to dir vs file, got:\n{}",
         output
     );
@@ -813,7 +830,7 @@ fn symlink_same_target_orig_file_backup_dir_follow() {
 
     // The symlink resolves to file on orig, dir on backup → TYPE mismatch
     assert!(
-        some_line_has(&output, "DIFFERENT-FILE [TYPE]:", "link"),
+        some_line_has(&output, "DIFFERENT-TYPE:", "link"),
         "Expected DIFFERENT-FILE [TYPE] for symlink resolving to file vs dir, got:\n{}",
         output
     );

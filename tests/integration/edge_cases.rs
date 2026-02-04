@@ -412,10 +412,10 @@ fn special_file_via_symlink_follow() {
         "Special file should not be a similarity (root + ok.txt only), got:\n{}",
         output
     );
-    // Should be counted in the not-a-file-or-dir summary
+    // Should be counted in the not-a-file-or-dir summary (one per side)
     assert!(
-        output.contains("Not a file or dir: 1"),
-        "Expected 'Not a file or dir: 1' in summary, got:\n{}",
+        output.contains("Not a file or dir: 2"),
+        "Expected 'Not a file or dir: 2' in summary, got:\n{}",
         output
     );
     // Should not produce ERROR — this is an expected condition, not an I/O failure
