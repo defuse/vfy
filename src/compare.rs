@@ -97,14 +97,14 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
             Ok(m) => m,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Meta::Dangling,
             Err(e) => {
-                return Meta::Error(format!("Cannot stat {}: {}", path.display(), e));
+                return Meta::Error(format!("Cannot stat [{}]: {}", path.display(), e));
             }
         }
     } else {
         match fs::symlink_metadata(path) {
             Ok(m) => m,
             Err(e) => {
-                return Meta::Error(format!("Cannot stat {}: {}", path.display(), e));
+                return Meta::Error(format!("Cannot stat [{}]: {}", path.display(), e));
             }
         }
     };
@@ -123,7 +123,7 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
                 Meta::Dir(meta, entries)
             }
             Err(e) => {
-                Meta::Error(format!("Cannot read directory {}: {}", path.display(), e))
+                Meta::Error(format!("Cannot read directory [{}]: {}", path.display(), e))
             }
         }
     } else if ft.is_file() {
@@ -154,7 +154,7 @@ fn compare(
 ) {
     // Ignore check
     if config.ignore.iter().any(|ig| ig == orig || ig == backup) {
-        println!("SKIP: {}", orig.display());
+        println!("SKIP: [{}]", orig.display());
         stats.inc_skipped();
         return;
     }
@@ -171,7 +171,7 @@ fn compare(
                 stats.inc_errors();
             }
             Meta::Dangling => {
-                println!("DANGLING-SYMLINK: {}", orig.display());
+                println!("DANGLING-SYMLINK: [{}]", orig.display());
                 stats.inc_errors();
             }
             _ => unreachable!(),
@@ -186,7 +186,7 @@ fn compare(
                 stats.inc_errors();
             }
             Meta::Dangling => {
-                println!("DANGLING-SYMLINK: {}", backup.display());
+                println!("DANGLING-SYMLINK: [{}]", backup.display());
                 stats.inc_errors();
             }
             _ => unreachable!(),
@@ -200,13 +200,13 @@ fn compare(
     // --- Special files ---
     if matches!(meta_orig, Meta::Special) {
         stats.inc_original_items();
-        println!("NOT_A_FILE_OR_DIR: {}", orig.display());
+        println!("NOT_A_FILE_OR_DIR: [{}]", orig.display());
         stats.inc_not_a_file_or_dir();
     }
 
     if matches!(meta_back, Meta::Special) {
         stats.inc_backup_items();
-        println!("NOT_A_FILE_OR_DIR: {}", backup.display());
+        println!("NOT_A_FILE_OR_DIR: [{}]", backup.display());
         stats.inc_not_a_file_or_dir();
     }
 
@@ -249,15 +249,15 @@ fn compare(
             && matches!(meta_orig, Meta::File(_) | Meta::Dir(_, _)))
     {
         println!(
-            "DIFFERENT-SYMLINK-STATUS: {} (symlink mismatch)",
+            "DIFFERENT-SYMLINK-STATUS: [{}] (symlink mismatch)",
             orig.display()
         );
         stats.inc_different();
     } else if matches!(meta_orig, Meta::File(_)) && matches!(meta_back, Meta::Dir(_, _)) {
-        println!("DIFFERENT-TYPE: {} (file vs dir)", orig.display());
+        println!("DIFFERENT-TYPE: [{}] (file vs dir)", orig.display());
         stats.inc_different();
     } else if matches!(meta_orig, Meta::Dir(_, _)) && matches!(meta_back, Meta::File(_)) {
-        println!("DIFFERENT-TYPE: {} (dir vs file)", orig.display());
+        println!("DIFFERENT-TYPE: [{}] (dir vs file)", orig.display());
         stats.inc_different();
     }
 
@@ -288,7 +288,7 @@ fn compare_files(
 
     if config.verbosity >= Verbosity::Files {
         println!(
-            "DEBUG: Comparing file {} to {}",
+            "DEBUG: Comparing file [{}] to [{}]",
             orig.display(),
             backup.display()
         );
@@ -296,7 +296,7 @@ fn compare_files(
 
     match compare_file_content(orig, backup, orig_meta, backup_meta, config, stats) {
         FileCompareResult::Different(r) => {
-            println!("DIFFERENT-FILE [{}]: {}", r, orig.display());
+            println!("DIFFERENT-FILE [{}]: [{}]", r, orig.display());
             stats.inc_different();
         }
         FileCompareResult::Same => {
@@ -323,7 +323,7 @@ fn compare_directories(
     stats: &Stats,
 ) {
     if config.verbosity >= Verbosity::Dirs {
-        println!("DEBUG: Comparing {} to {}", orig.display(), backup.display());
+        println!("DEBUG: Comparing [{}] to [{}]", orig.display(), backup.display());
     }
 
     // Check one-filesystem before counting
@@ -339,7 +339,7 @@ fn compare_directories(
                     if orig_meta.dev() != parent_meta.dev() {
                         stats.inc_original_items();
                         stats.inc_backup_items();
-                        println!("DIFFERENT-FS: {}", orig.display());
+                        println!("DIFFERENT-FS: [{}]", orig.display());
                         stats.inc_skipped();
                         return;
                     }
@@ -348,7 +348,7 @@ fn compare_directories(
                     stats.inc_original_items();
                     stats.inc_backup_items();
                     println!(
-                        "ERROR: Cannot stat parent directory {}: {}",
+                        "ERROR: Cannot stat parent directory [{}]: {}",
                         parent.display(),
                         e
                     );
@@ -406,7 +406,7 @@ fn compare_symlinks(
         Err(e) => {
             stats.inc_original_items();
             println!(
-                "ERROR: Cannot read symlink target for {}: {}",
+                "ERROR: Cannot read symlink target for [{}]: {}",
                 orig.display(),
                 e
             );
@@ -420,7 +420,7 @@ fn compare_symlinks(
         Err(e) => {
             stats.inc_backup_items();
             println!(
-                "ERROR: Cannot read symlink target for {}: {}",
+                "ERROR: Cannot read symlink target for [{}]: {}",
                 backup.display(),
                 e
             );
@@ -436,7 +436,7 @@ fn compare_symlinks(
     let targets_differ = orig_target != backup_target;
     if targets_differ {
         println!(
-            "DIFFERENT-SYMLINK-TARGET: {} (targets differ: {:?} vs {:?})",
+            "DIFFERENT-SYMLINK-TARGET: [{}] (targets differ: {:?} vs {:?})",
             orig.display(),
             orig_target,
             backup_target
@@ -450,7 +450,7 @@ fn compare_symlinks(
 
     if !config.follow {
         println!(
-            "SYMLINK: {} (symlink, use --follow to compare content)",
+            "SYMLINK: [{}] (symlink, use --follow to compare content)",
             orig.display()
         );
         stats.inc_skipped();
@@ -480,7 +480,7 @@ fn report(
     // Check ignore first (before any I/O)
     if config.ignore.iter().any(|ig| ig == path) {
         if print {
-            println!("SKIP: {}", path.display());
+            println!("SKIP: [{}]", path.display());
         }
         stats.inc_skipped();
         return;
@@ -497,7 +497,7 @@ fn report(
             return;
         }
         Meta::Dangling => {
-            println!("DANGLING-SYMLINK: {}", path.display());
+            println!("DANGLING-SYMLINK: [{}]", path.display());
             stats.inc_errors();
             return;
         }
@@ -506,7 +506,7 @@ fn report(
 
     if matches!(meta, Meta::Special) {
         if print {
-            println!("NOT_A_FILE_OR_DIR: {}", path.display());
+            println!("NOT_A_FILE_OR_DIR: [{}]", path.display());
         }
         stats.inc_not_a_file_or_dir();
         return;
@@ -514,7 +514,7 @@ fn report(
 
     let kind = meta.classify();
     if print {
-        println!("{}: {}", direction.prefix(kind), path.display());
+        println!("{}: [{}]", direction.prefix(kind), path.display());
     }
     direction.inc_count(stats);
 
@@ -592,13 +592,13 @@ fn compare_file_content(
                     }
                 }
                 (Err(e), Ok(_)) => {
-                    println!("ERROR: Cannot read sample from {}: {}", orig.display(), e);
+                    println!("ERROR: Cannot read sample from [{}]: {}", orig.display(), e);
                     stats.inc_errors();
                     return FileCompareResult::ErrorAlreadyReported;
                 }
                 (Ok(_), Err(e)) => {
                     println!(
-                        "ERROR: Cannot read sample from {}: {}",
+                        "ERROR: Cannot read sample from [{}]: {}",
                         backup.display(),
                         e
                     );
@@ -606,10 +606,10 @@ fn compare_file_content(
                     return FileCompareResult::ErrorAlreadyReported;
                 }
                 (Err(e1), Err(e2)) => {
-                    println!("ERROR: Cannot read sample from {}: {}", orig.display(), e1);
+                    println!("ERROR: Cannot read sample from [{}]: {}", orig.display(), e1);
                     stats.inc_errors();
                     println!(
-                        "ERROR: Cannot read sample from {}: {}",
+                        "ERROR: Cannot read sample from [{}]: {}",
                         backup.display(),
                         e2
                     );
@@ -628,7 +628,7 @@ fn compare_file_content(
         let orig_hash = match orig_result {
             Ok(h) => Some(h),
             Err(e) => {
-                println!("ERROR: Cannot hash {}: {}", orig.display(), e);
+                println!("ERROR: Cannot hash [{}]: {}", orig.display(), e);
                 stats.inc_errors();
                 None
             }
@@ -636,7 +636,7 @@ fn compare_file_content(
         let backup_hash = match backup_result {
             Ok(h) => Some(h),
             Err(e) => {
-                println!("ERROR: Cannot hash {}: {}", backup.display(), e);
+                println!("ERROR: Cannot hash [{}]: {}", backup.display(), e);
                 stats.inc_errors();
                 None
             }
@@ -650,9 +650,9 @@ fn compare_file_content(
         let backup_hash = backup_hash.unwrap();
 
         if config.verbosity >= Verbosity::Files {
-            println!("DEBUG: BLAKE3 {} {}", orig_hash.to_hex(), orig.display());
+            println!("DEBUG: BLAKE3 {} [{}]", orig_hash.to_hex(), orig.display());
             println!(
-                "DEBUG: BLAKE3 {} {}",
+                "DEBUG: BLAKE3 {} [{}]",
                 backup_hash.to_hex(),
                 backup.display()
             );
