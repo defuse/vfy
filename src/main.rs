@@ -2,7 +2,6 @@ mod cli;
 mod compare;
 mod stats;
 
-use std::io::Write;
 use std::process;
 use std::sync::Arc;
 
@@ -12,6 +11,20 @@ use cli::{Cli, Config};
 use stats::Stats;
 
 fn main() {
+    // Replace the default panic hook to handle broken pipes cleanly.
+    // Rust ignores SIGPIPE, so writing to a broken pipe (e.g. piping to
+    // `head` or `grep`) causes println! to panic. Catch that and exit
+    // with a visible message instead of a traceback.
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let msg = info.to_string();
+        if msg.contains("Broken pipe") {
+            eprintln!("Broken pipe: output was truncated");
+            process::exit(141); // 128 + SIGPIPE(13)
+        }
+        default_hook(info);
+    }));
+
     // Print the command-line we were run with
     let cmd: Vec<String> = std::env::args()
         .map(|a| {
@@ -53,11 +66,8 @@ fn main() {
 
     ctrlc::set_handler(move || {
         eprintln!("\nInterrupted!");
-        stats_ctrlc.print_summary();
-        println!("WARNING: EXITING BEFORE VERIFICATION WAS COMPLETE!");
-        if let Err(e) = std::io::stdout().flush() {
-            eprintln!("Warning: failed to flush stdout: {}", e);
-        }
+        stats_ctrlc.eprint_summary();
+        eprintln!("WARNING: EXITING BEFORE VERIFICATION WAS COMPLETE!");
         process::exit(130);
     })
     .expect("Error setting Ctrl-C handler");

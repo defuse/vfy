@@ -64,7 +64,7 @@ impl Stats {
         self.errors.fetch_add(1, Ordering::Relaxed);
     }
 
-    pub fn print_summary(&self) {
+    fn format_summary(&self) -> String {
         let orig = self.original_items.load(Ordering::Relaxed);
         let missing = self.missing.load(Ordering::Relaxed);
         let different = self.different.load(Ordering::Relaxed);
@@ -75,24 +75,34 @@ impl Stats {
             0.0
         };
 
-        println!("SUMMARY:");
-        println!("    Original items processed: {}", orig);
-        println!(
-            "    Backup items processed: {}",
-            self.backup_items.load(Ordering::Relaxed)
-        );
-        println!("    Missing/different: {} ({:.2}%)", missing_different, pct);
-        println!("    Extras: {}", self.extras.load(Ordering::Relaxed));
-        println!(
-            "    Not a file or dir: {}",
-            self.not_a_file_or_dir.load(Ordering::Relaxed)
-        );
-        println!(
-            "    Similarities: {}",
-            self.similarities.load(Ordering::Relaxed)
-        );
-        println!("    Skipped: {}", self.skipped.load(Ordering::Relaxed));
-        println!("    Errors: {}", self.errors.load(Ordering::Relaxed));
+        format!(
+            "SUMMARY:\n\
+             \x20   Original items processed: {}\n\
+             \x20   Backup items processed: {}\n\
+             \x20   Missing/different: {} ({:.2}%)\n\
+             \x20   Extras: {}\n\
+             \x20   Not a file or dir: {}\n\
+             \x20   Similarities: {}\n\
+             \x20   Skipped: {}\n\
+             \x20   Errors: {}",
+            orig,
+            self.backup_items.load(Ordering::Relaxed),
+            missing_different, pct,
+            self.extras.load(Ordering::Relaxed),
+            self.not_a_file_or_dir.load(Ordering::Relaxed),
+            self.similarities.load(Ordering::Relaxed),
+            self.skipped.load(Ordering::Relaxed),
+            self.errors.load(Ordering::Relaxed),
+        )
+    }
+
+    pub fn print_summary(&self) {
+        println!("{}", self.format_summary());
+    }
+
+    /// Print summary to stderr (for ctrl-c handler when stdout may be broken).
+    pub fn eprint_summary(&self) {
+        eprintln!("{}", self.format_summary());
     }
 
     pub fn has_differences(&self) -> bool {
