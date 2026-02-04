@@ -19,7 +19,7 @@ Output prefixes (grep-friendly):
   DIFFERENT-SYMLINK-TARGET:      Both sides are symlinks but point to different targets
   DIFFERENT-SYMLINK-STATUS:      One side is a symlink, the other is not
   SPECIAL-FILE:                  Entry is a device, FIFO, socket, etc.
-  SYMLINK:                       Symlink skipped (use --follow to compare content)
+  SYMLINK-SKIPPED:               Symlink skipped (use --follow to compare resolved content)
   DANGLING-SYMLINK:              Symlink target does not exist (with --follow)
   DIFFERENT-FS:                  Different filesystem skipped (--one-filesystem)
   SKIP:                          Entry skipped via --ignore

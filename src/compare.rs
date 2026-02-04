@@ -450,7 +450,7 @@ fn compare_symlinks(
 
     if !config.follow {
         println!(
-            "SYMLINK: [{}] (symlink, use --follow to compare content)",
+            "SYMLINK-SKIPPED: [{}] (use --follow to compare resolved content)",
             orig.display()
         );
         stats.inc_skipped();

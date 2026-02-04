@@ -129,7 +129,7 @@ fn create_entries(dir: &Path, entries: &[Entry]) {
 /// Rules:
 ///   - MISSING-X ↔ EXTRA-X  (prefix swap + path a/↔b/)
 ///   - DANGLING-SYMLINK:     (path a/↔b/ only)
-///   - Everything else:      unchanged (DIFFERENT-*, SPECIAL-FILE, SYMLINK
+///   - Everything else:      unchanged (DIFFERENT-*, SPECIAL-FILE, SYMLINK-SKIPPED
 ///                           always report the orig path, which is always a/)
 fn reverse_expected_line(line: &str) -> String {
     // Split "PREFIX: path" at the first ": "
@@ -1277,7 +1277,7 @@ case!(symfile_x_symfile_same {
     ],
     flags: [],
     lines: [
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
     ],
     // Both sides have identical symlinks → SYMLINK (skipped)
     // "target" files match → similarity
@@ -1331,7 +1331,7 @@ case!(symdir_x_symdir_same {
     ],
     flags: [],
     lines: [
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
     ],
     // Both sides have identical symlinks → SYMLINK (skipped)
     // "target" dirs match, "target/child" files match → similarities
@@ -1385,7 +1385,7 @@ case!(symdangling_x_symdangling_same {
     ],
     flags: [],
     lines: [
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
     ],
     // Both symlinks point to same target → SYMLINK (skipped)
     original_processed: 2,
@@ -1438,7 +1438,7 @@ case!(symfile_x_symfile_diff {
     flags: [],
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "MISSING-FILE: a/target-a",
         "EXTRA-FILE: b/target-b",
     ],
@@ -1501,7 +1501,7 @@ case!(symdir_x_symdir_diff {
     flags: [],
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "MISSING-DIR: a/target-a",
         "EXTRA-DIR: b/target-b",
     ],
@@ -1567,7 +1567,7 @@ case!(symdangling_x_symdangling_diff {
     flags: [],
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
     ],
     original_processed: 2,
     backup_processed: 2,
@@ -1621,7 +1621,7 @@ case!(symfile_x_symdir_diff {
     flags: [],
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "MISSING-FILE: a/target-a",
         "EXTRA-DIR: b/target-b",
     ],
@@ -1686,7 +1686,7 @@ case!(symfile_x_symdangling_diff {
     flags: [],
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "MISSING-FILE: a/target-a",
     ],
     // "entry" symlinks differ → DIFFERENT-SYMLINK-TARGET + SYMLINK (skipped)
@@ -1745,7 +1745,7 @@ case!(symdir_x_symdangling_diff {
     flags: [],
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "MISSING-DIR: a/target-a",
     ],
     // "entry" symlinks differ → DIFFERENT-SYMLINK-TARGET + SYMLINK (skipped)
@@ -1807,7 +1807,7 @@ case!(symfile_x_symdir_same_target {
     ],
     flags: [],
     lines: [
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "FILE-DIR-MISMATCH: a/target",
         "MISSING-FILE: a/target",
         "EXTRA-DIR: b/target",
@@ -1871,7 +1871,7 @@ case!(symfile_x_symdangling_same_target {
     ],
     flags: [],
     lines: [
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "MISSING-FILE: a/target",
     ],
     // Same target → SYMLINK (skipped), similarity
@@ -1928,7 +1928,7 @@ case!(symdir_x_symdangling_same_target {
     ],
     flags: [],
     lines: [
-        "SYMLINK: a/entry",
+        "SYMLINK-SKIPPED: a/entry",
         "MISSING-DIR: a/target",
     ],
     // Same target → SYMLINK (skipped), similarity

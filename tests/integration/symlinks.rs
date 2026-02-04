@@ -6,10 +6,10 @@ fn symlink_dir_no_follow() {
     let assert = cmd().args([&a, &b, "-v", "-v"]).assert().success();
     let output = stdout_of(&assert);
 
-    // Without --follow, symlink-to-dir → SYMLINK: and not traversed
+    // Without --follow, symlink-to-dir → SYMLINK-SKIPPED: and not traversed
     assert!(
-        some_line_has(&output, "SYMLINK:", "/link_dir"),
-        "Expected SYMLINK: for link_dir without --follow, got:\n{}",
+        some_line_has(&output, "SYMLINK-SKIPPED:", "/link_dir"),
+        "Expected SYMLINK-SKIPPED: for link_dir without --follow, got:\n{}",
         output
     );
     // Symlink-to-dir should be counted as skipped
@@ -30,8 +30,8 @@ fn symlink_dir_with_follow() {
     let output = stdout_of(&assert);
 
     assert!(
-        !output.contains("SYMLINK:"),
-        "Should not produce SYMLINK: with --follow"
+        !output.contains("SYMLINK-SKIPPED:"),
+        "Should not produce SYMLINK-SKIPPED: with --follow"
     );
     // Files inside the symlinked dir should be traversed
     assert!(
@@ -80,10 +80,10 @@ fn symlink_dir_different_targets_no_follow() {
         "Expected DIFFERENT-SYMLINK-TARGET for dir symlinks with different targets, got:\n{}",
         output
     );
-    // Without --follow, should also emit SYMLINK: + skip (content not verified)
+    // Without --follow, should also emit SYMLINK-SKIPPED: (content not verified)
     assert!(
-        some_line_has(&output, "SYMLINK:", "link"),
-        "Expected SYMLINK: skip after target mismatch without --follow, got:\n{}",
+        some_line_has(&output, "SYMLINK-SKIPPED:", "link"),
+        "Expected SYMLINK-SKIPPED: after target mismatch without --follow, got:\n{}",
         output
     );
 }
@@ -351,10 +351,10 @@ fn symlink_follow_finds_differences() {
         "Expected MISSING-FILE for only_orig.txt inside followed symlink dir, got:\n{}",
         output
     );
-    // No SYMLINK: lines since we used --follow
+    // No SYMLINK-SKIPPED: lines since we used --follow
     assert!(
-        !output.contains("SYMLINK:"),
-        "Should not produce SYMLINK: with --follow, got:\n{}",
+        !output.contains("SYMLINK-SKIPPED:"),
+        "Should not produce SYMLINK-SKIPPED: with --follow, got:\n{}",
         output
     );
 }
@@ -457,7 +457,7 @@ fn file_symlink_with_follow_compares_content() {
 #[test]
 fn file_symlink_without_follow_reports_skip() {
     // Both sides have matching file symlinks. Without --follow, the symlink
-    // should be reported as SYMLINK: + skipped (content not verified),
+    // should be reported as SYMLINK-SKIPPED: (content not verified),
     // not silently counted as a similarity.
     let tmp = std::env::temp_dir().join("bv_test_file_symlink_no_follow");
     let _ = std::fs::remove_dir_all(&tmp);
@@ -485,10 +485,10 @@ fn file_symlink_without_follow_reports_skip() {
         "Expected DIFFERENT-FILE for target.txt, got:\n{}",
         output
     );
-    // Without --follow, link should be SYMLINK: + skipped, not a similarity
+    // Without --follow, link should be SYMLINK-SKIPPED:, not a similarity
     assert!(
-        some_line_has(&output, "SYMLINK:", "link"),
-        "Expected SYMLINK: for file symlink without --follow, got:\n{}",
+        some_line_has(&output, "SYMLINK-SKIPPED:", "link"),
+        "Expected SYMLINK-SKIPPED: for file symlink without --follow, got:\n{}",
         output
     );
     assert!(
