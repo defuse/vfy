@@ -72,6 +72,15 @@ pub struct DebugChecks<'a> {
     pub excludes: &'a [&'a str],
 }
 
+/// Output assertions for checking arbitrary substrings in full output.
+#[derive(Clone, Debug, Default)]
+pub struct OutputChecks<'a> {
+    /// Substrings that must appear somewhere in the output
+    pub contains: &'a [&'a str],
+    /// Substrings that must NOT appear anywhere in the output
+    pub excludes: &'a [&'a str],
+}
+
 // ---------------------------------------------------------------------------
 // case! macro
 // ---------------------------------------------------------------------------
@@ -107,7 +116,57 @@ pub struct DebugChecks<'a> {
 /// ```
 #[macro_export]
 macro_rules! case {
-    // Extended form with debug_contains and debug_excludes
+    // Full form with debug_contains, debug_excludes, output_contains, output_excludes
+    ($name:ident {
+        orig: [ $($orig:expr),* $(,)? ],
+        backup: [ $($backup:expr),* $(,)? ],
+        flags: [ $($flag:expr),* $(,)? ],
+        lines: [ $($line:expr),* $(,)? ],
+        debug_contains: [ $($dc:expr),* $(,)? ],
+        debug_excludes: [ $($de:expr),* $(,)? ],
+        output_contains: [ $($oc:expr),* $(,)? ],
+        output_excludes: [ $($oe:expr),* $(,)? ],
+        original_processed: $op:expr,
+        backup_processed: $bp:expr,
+        missing: $mis:expr,
+        different: $diff:expr,
+        extras: $ext:expr,
+        special_files: $nfd:expr,
+        similarities: $sim:expr,
+        skipped: $skip:expr,
+        errors: $err:expr $(,)?
+    }) => {
+        #[test]
+        fn $name() {
+            $crate::harness::check_full(
+                stringify!($name),
+                &[$($orig),*],
+                &[$($backup),*],
+                &[$($flag),*],
+                &[$($line),*],
+                $crate::harness::DebugChecks {
+                    contains: &[$($dc),*],
+                    excludes: &[$($de),*],
+                },
+                $crate::harness::OutputChecks {
+                    contains: &[$($oc),*],
+                    excludes: &[$($oe),*],
+                },
+                $crate::harness::Counts {
+                    original_processed: $op,
+                    backup_processed: $bp,
+                    missing: $mis,
+                    different: $diff,
+                    extras: $ext,
+                    special_files: $nfd,
+                    similarities: $sim,
+                    skipped: $skip,
+                    errors: $err,
+                },
+            );
+        }
+    };
+    // Extended form with debug_contains and debug_excludes (no output checks)
     ($name:ident {
         orig: [ $($orig:expr),* $(,)? ],
         backup: [ $($backup:expr),* $(,)? ],
@@ -151,7 +210,7 @@ macro_rules! case {
             );
         }
     };
-    // Basic form (no debug checks)
+    // Basic form (no debug or output checks)
     ($name:ident {
         orig: [ $($orig:expr),* $(,)? ],
         backup: [ $($backup:expr),* $(,)? ],
@@ -350,7 +409,7 @@ pub fn is_diagnostic_line(line: &str) -> bool {
     true
 }
 
-/// Run vfy and check output lines, summary counts, and optionally DEBUG lines.
+/// Run vfy and check output lines, summary counts, DEBUG lines, and output substrings.
 pub fn run_and_check_full(
     label: &str,
     tmp: &Path,
@@ -359,6 +418,7 @@ pub fn run_and_check_full(
     flags: &[&str],
     expected_lines: &[&str],
     debug_checks: Option<&DebugChecks>,
+    output_checks: Option<&OutputChecks>,
     counts: &Counts,
 ) {
     let a = tmp.join("a");
@@ -460,6 +520,31 @@ pub fn run_and_check_full(
         }
     }
 
+    // Check output substring assertions if provided
+    if let Some(checks) = output_checks {
+        // Check output_contains: each pattern must appear somewhere in output
+        for pattern in checks.contains {
+            if !stdout.contains(pattern) {
+                panic!(
+                    "[{}] Output check failed: expected output to contain {:?}.\n\
+                     Full output:\n{}",
+                    label, pattern, stdout
+                );
+            }
+        }
+
+        // Check output_excludes: each pattern must NOT appear anywhere in output
+        for pattern in checks.excludes {
+            if stdout.contains(pattern) {
+                panic!(
+                    "[{}] Output check failed: expected output to NOT contain {:?}.\n\
+                     Full output:\n{}",
+                    label, pattern, stdout
+                );
+            }
+        }
+    }
+
     // Check summary counts
     let expect_exit_0 = counts.missing == 0
         && counts.different == 0
@@ -499,7 +584,7 @@ pub fn run_and_check_full(
     }
 }
 
-/// Run vfy and check output lines + summary counts (no DEBUG checking).
+/// Run vfy and check output lines + summary counts (no DEBUG or output checking).
 pub fn run_and_check(
     label: &str,
     tmp: &Path,
@@ -517,6 +602,7 @@ pub fn run_and_check(
         flags,
         expected_lines,
         None,
+        None,
         counts,
     );
 }
@@ -530,7 +616,7 @@ pub fn check(
     expected_lines: &[&str],
     counts: Counts,
 ) {
-    check_with_debug_internal(name, orig_entries, backup_entries, flags, expected_lines, None, counts);
+    check_internal(name, orig_entries, backup_entries, flags, expected_lines, None, None, counts);
 }
 
 /// Entry point for case! macro with DEBUG checking: runs forward and reversed tests.
@@ -543,24 +629,49 @@ pub fn check_with_debug(
     debug_checks: DebugChecks,
     counts: Counts,
 ) {
-    check_with_debug_internal(
+    check_internal(
         name,
         orig_entries,
         backup_entries,
         flags,
         expected_lines,
         Some(debug_checks),
+        None,
         counts,
     );
 }
 
-fn check_with_debug_internal(
+/// Entry point for case! macro with all checking options: runs forward and reversed tests.
+pub fn check_full(
+    name: &str,
+    orig_entries: &[Entry],
+    backup_entries: &[Entry],
+    flags: &[&str],
+    expected_lines: &[&str],
+    debug_checks: DebugChecks,
+    output_checks: OutputChecks,
+    counts: Counts,
+) {
+    check_internal(
+        name,
+        orig_entries,
+        backup_entries,
+        flags,
+        expected_lines,
+        Some(debug_checks),
+        Some(output_checks),
+        counts,
+    );
+}
+
+fn check_internal(
     name: &str,
     orig_entries: &[Entry],
     backup_entries: &[Entry],
     flags: &[&str],
     expected_lines: &[&str],
     debug_checks: Option<DebugChecks>,
+    output_checks: Option<OutputChecks>,
     counts: Counts,
 ) {
     let tmp = std::env::temp_dir().join(format!("bv_harness_{}", name));
@@ -576,6 +687,7 @@ fn check_with_debug_internal(
         flags,
         expected_lines,
         debug_checks.as_ref(),
+        output_checks.as_ref(),
         &counts,
     );
 
@@ -599,7 +711,7 @@ fn check_with_debug_internal(
         errors: counts.errors,
     };
 
-    // Note: DEBUG checks are only done on forward direction, since the debug output
+    // Note: DEBUG and output checks are only done on forward direction, since the
     // patterns typically reference a/ and b/ paths which swap in reversed mode
     run_and_check_full(
         &format!("{} (reversed)", name),
@@ -609,6 +721,7 @@ fn check_with_debug_internal(
         flags,
         &reversed_line_refs,
         None, // Skip debug checks for reversed
+        None, // Skip output checks for reversed
         &reversed_counts,
     );
 
