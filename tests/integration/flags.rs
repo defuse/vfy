@@ -986,3 +986,281 @@ fn ignore_relative_path_bare_name() {
         output
     );
 }
+
+// ===========================================================================
+// BUG EXPOSURE: --ignore SKIP not printed without -vv
+// ===========================================================================
+
+/// Control test: with -vv, SKIP should appear for ignored nested files (current behavior works)
+#[test]
+fn ignore_nested_in_missing_dir_with_vv_prints_skip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+
+    std::fs::create_dir_all(a.join("missing_dir")).unwrap();
+    std::fs::write(a.join("missing_dir/ignored.txt"), "x").unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    let assert = cmd()
+        .args([
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-i", &a.join("missing_dir/ignored.txt").to_string_lossy(),
+            "-vv",  // With verbose, SKIP should appear
+        ])
+        .assert()
+        .code(1);
+
+    let output = stdout_of(&assert);
+
+    // This should pass - with -vv, SKIP is printed (when ignoring same-side path)
+    assert!(output.contains("SKIP:"),
+        "SKIP should appear with -vv\nOutput:\n{}", output);
+
+    // Verify ALL counts
+    // Skipped items are NOT counted in "items processed"
+    // Structure: root(1) + missing_dir(1) = 2 original items (ignored.txt skipped)
+    assert!(output.contains("Original items processed: 2"),
+        "Expected Original: 2\nOutput:\n{}", output);
+    assert!(output.contains("Backup items processed: 1"),    // root only
+        "Expected Backup: 1\nOutput:\n{}", output);
+    assert!(output.contains("Missing: 1"),                   // missing_dir only (NOT ignored.txt)
+        "Expected Missing: 1\nOutput:\n{}", output);
+    assert!(output.contains("Different: 0"),
+        "Expected Different: 0\nOutput:\n{}", output);
+    assert!(output.contains("Extras: 0"),
+        "Expected Extras: 0\nOutput:\n{}", output);
+    assert!(output.contains("Special files: 0"),
+        "Expected Special: 0\nOutput:\n{}", output);
+    assert!(output.contains("Similarities: 1"),              // root dir
+        "Expected Similarities: 1\nOutput:\n{}", output);
+    assert!(output.contains("Skipped: 1"),                   // ignored.txt
+        "Expected Skipped: 1\nOutput:\n{}", output);
+    assert!(output.contains("Errors: 0"),
+        "Expected Errors: 0\nOutput:\n{}", output);
+}
+
+/// BUG EXPOSURE: Test that ignored paths inside missing directories print SKIP even without -vv
+#[test]
+fn ignore_nested_in_missing_dir_prints_skip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+
+    // Create structure in orig only (will be reported as missing)
+    std::fs::create_dir_all(a.join("missing_dir")).unwrap();
+    std::fs::write(a.join("missing_dir/ignored.txt"), "x").unwrap();
+    std::fs::write(a.join("missing_dir/other.txt"), "y").unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    let assert = cmd()
+        .args([
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-i", &a.join("missing_dir/ignored.txt").to_string_lossy(),
+            // NO -vv flag - testing default verbosity
+        ])
+        .assert()
+        .code(1);
+
+    let output = stdout_of(&assert);
+
+    // BUG: Currently SKIP is NOT printed without -vv
+    // Expected behavior: SKIP should always print for ignored paths
+    // The Skipped: 1 count IS correct, but the SKIP: line is missing
+    assert!(output.contains("SKIP:"),
+        "SKIP should appear for ignored.txt even without -vv\nOutput:\n{}", output);
+}
+
+// ===========================================================================
+// --ignore symmetry tests
+// ===========================================================================
+// Note: The tool requires ignore paths to exist, so we can only ignore
+// paths that actually exist in one of the trees. The following tests verify
+// that ignoring an existing backup-side path works correctly for extras,
+// and ignoring an existing original-side path works correctly for missing.
+
+/// Test that ignoring a backup extra file via backup path (b/...) works correctly
+/// This is a control test - ignoring the path that exists should work.
+#[test]
+fn ignore_backup_path_for_backup_extra() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    // File only in backup (would be reported as extra)
+    std::fs::write(b.join("should_skip.txt"), "backup only").unwrap();
+
+    // Ignore using BACKUP path (which exists)
+    let assert = cmd()
+        .args([
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-i", &b.join("should_skip.txt").to_string_lossy(),
+        ])
+        .assert()
+        .success();  // Should be success since only item is skipped
+
+    let output = stdout_of(&assert);
+
+    // This should work - ignoring the path that exists
+    assert!(output.contains("SKIP:"),
+        "SKIP should appear when backup path ignored\nOutput:\n{}", output);
+    assert!(!output.contains("EXTRA-FILE"),
+        "should_skip.txt should not be reported as extra\nOutput:\n{}", output);
+
+    // Verify counts
+    assert!(output.contains("Original items processed: 1"),  // root only
+        "Expected Original: 1\nOutput:\n{}", output);
+    assert!(output.contains("Backup items processed: 1"),    // root only (skip not counted)
+        "Expected Backup: 1\nOutput:\n{}", output);
+    assert!(output.contains("Extras: 0"),                    // should_skip.txt ignored
+        "Expected Extras: 0\nOutput:\n{}", output);
+    assert!(output.contains("Similarities: 1"),              // root dir
+        "Expected Similarities: 1\nOutput:\n{}", output);
+    assert!(output.contains("Skipped: 1"),                   // should_skip.txt
+        "Expected Skipped: 1\nOutput:\n{}", output);
+}
+
+/// Test that ignoring an original missing file via original path (a/...) works correctly
+/// This is a control test - ignoring the path that exists should work.
+#[test]
+fn ignore_orig_path_for_orig_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    // File only in original (would be reported as missing)
+    std::fs::write(a.join("should_skip.txt"), "orig only").unwrap();
+
+    // Ignore using ORIGINAL path (which exists)
+    let assert = cmd()
+        .args([
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-i", &a.join("should_skip.txt").to_string_lossy(),
+        ])
+        .assert()
+        .success();  // Should be success since only item is skipped
+
+    let output = stdout_of(&assert);
+
+    // This should work - ignoring the path that exists
+    assert!(output.contains("SKIP:"),
+        "SKIP should appear when orig path ignored\nOutput:\n{}", output);
+    assert!(!output.contains("MISSING-FILE"),
+        "should_skip.txt should not be reported as missing\nOutput:\n{}", output);
+
+    // Verify counts
+    assert!(output.contains("Original items processed: 1"),  // root only (skip not counted)
+        "Expected Original: 1\nOutput:\n{}", output);
+    assert!(output.contains("Backup items processed: 1"),    // root only
+        "Expected Backup: 1\nOutput:\n{}", output);
+    assert!(output.contains("Missing: 0"),                   // should_skip.txt ignored
+        "Expected Missing: 0\nOutput:\n{}", output);
+    assert!(output.contains("Similarities: 1"),              // root dir
+        "Expected Similarities: 1\nOutput:\n{}", output);
+    assert!(output.contains("Skipped: 1"),                   // should_skip.txt
+        "Expected Skipped: 1\nOutput:\n{}", output);
+}
+
+/// Test ignoring a nested file inside a missing directory via original path
+#[test]
+fn ignore_orig_path_for_nested_missing() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+
+    // Missing directory in original with files inside
+    std::fs::create_dir_all(a.join("missing_dir")).unwrap();
+    std::fs::write(a.join("missing_dir/should_skip.txt"), "nested in missing").unwrap();
+    std::fs::write(a.join("missing_dir/other.txt"), "also nested").unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Ignore using ORIGINAL path (which exists)
+    let assert = cmd()
+        .args([
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-i", &a.join("missing_dir/should_skip.txt").to_string_lossy(),
+            "-vv",  // Need verbose to see individual children
+        ])
+        .assert()
+        .code(1);
+
+    let output = stdout_of(&assert);
+
+    // should_skip.txt should be skipped
+    assert!(output.contains("SKIP:"),
+        "SKIP should appear for should_skip.txt\nOutput:\n{}", output);
+    assert!(!some_line_has(&output, "MISSING-FILE", "should_skip.txt"),
+        "should_skip.txt should not be reported as missing\nOutput:\n{}", output);
+    // other.txt SHOULD still be reported as missing
+    assert!(some_line_has(&output, "MISSING-FILE", "other.txt"),
+        "other.txt should be reported as missing\nOutput:\n{}", output);
+
+    // Verify counts - skipped items don't count toward "processed"
+    assert!(output.contains("Original items processed: 3"),  // root + missing_dir + other.txt (skip not counted)
+        "Expected Original: 3\nOutput:\n{}", output);
+    assert!(output.contains("Backup items processed: 1"),    // root only
+        "Expected Backup: 1\nOutput:\n{}", output);
+    assert!(output.contains("Missing: 2"),                   // missing_dir + other.txt (NOT should_skip)
+        "Expected Missing: 2\nOutput:\n{}", output);
+    assert!(output.contains("Similarities: 1"),              // root dir
+        "Expected Similarities: 1\nOutput:\n{}", output);
+    assert!(output.contains("Skipped: 1"),                   // should_skip.txt
+        "Expected Skipped: 1\nOutput:\n{}", output);
+}
+
+/// Test ignoring a nested file inside an extra directory via backup path
+#[test]
+fn ignore_backup_path_for_nested_extra() {
+    let tmp = tempfile::tempdir().unwrap();
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+
+    std::fs::create_dir_all(&a).unwrap();
+    // Extra directory in backup with files inside
+    std::fs::create_dir_all(b.join("extra_dir")).unwrap();
+    std::fs::write(b.join("extra_dir/should_skip.txt"), "nested in extra").unwrap();
+    std::fs::write(b.join("extra_dir/other.txt"), "also nested").unwrap();
+
+    // Ignore using BACKUP path (which exists)
+    let assert = cmd()
+        .args([
+            a.to_str().unwrap(),
+            b.to_str().unwrap(),
+            "-i", &b.join("extra_dir/should_skip.txt").to_string_lossy(),
+            "-vv",  // Need verbose to see individual children
+        ])
+        .assert()
+        .code(1);
+
+    let output = stdout_of(&assert);
+
+    // should_skip.txt should be skipped
+    assert!(output.contains("SKIP:"),
+        "SKIP should appear for should_skip.txt\nOutput:\n{}", output);
+    assert!(!some_line_has(&output, "EXTRA-FILE", "should_skip.txt"),
+        "should_skip.txt should not be reported as extra\nOutput:\n{}", output);
+    // other.txt SHOULD still be reported as extra
+    assert!(some_line_has(&output, "EXTRA-FILE", "other.txt"),
+        "other.txt should be reported as extra\nOutput:\n{}", output);
+
+    // Verify counts - skipped items don't count toward "processed"
+    assert!(output.contains("Original items processed: 1"),  // root only
+        "Expected Original: 1\nOutput:\n{}", output);
+    assert!(output.contains("Backup items processed: 3"),    // root + extra_dir + other.txt (skip not counted)
+        "Expected Backup: 3\nOutput:\n{}", output);
+    assert!(output.contains("Extras: 2"),                    // extra_dir + other.txt (NOT should_skip)
+        "Expected Extras: 2\nOutput:\n{}", output);
+    assert!(output.contains("Similarities: 1"),              // root dir
+        "Expected Similarities: 1\nOutput:\n{}", output);
+    assert!(output.contains("Skipped: 1"),                   // should_skip.txt
+        "Expected Skipped: 1\nOutput:\n{}", output);
+}

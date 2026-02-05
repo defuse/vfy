@@ -532,9 +532,7 @@ fn report(
 ) {
     // Check ignore first (before any I/O)
     if config.ignore.iter().any(|ig| ig == path) {
-        if print {
-            println!("SKIP: [{}]", path.display());
-        }
+        println!("SKIP: [{}]", path.display());
         stats.inc_skipped();
         return;
     }

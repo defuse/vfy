@@ -382,3 +382,85 @@ fn backup_is_file_not_dir() {
         .code(2)
         .stderr(predicate::str::contains("is not a directory"));
 }
+
+// ===========================================================================
+// BothError coverage tests (both files unreadable)
+// ===========================================================================
+
+// Both files unreadable with --all flag triggers hash BothError handler
+// Files exist and have same metadata, but both fail to read during hashing
+// Note: Use "ERROR: a/file.txt" pattern - harness splits at ": " and checks
+// line.starts_with("ERROR") && line.contains("a/file.txt")
+case!(both_files_unreadable_hash {
+    orig: [FileUnreadable("file.txt", "content")],
+    backup: [FileUnreadable("file.txt", "content")],
+    flags: ["--all"],
+    lines: [
+        "ERROR: a/file.txt",
+        "ERROR: b/file.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Cannot hash"],
+    output_excludes: [],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 2,
+});
+
+// Both files unreadable with -s flag triggers sample BothError handler
+// Files must have same size to reach sample comparison path
+case!(both_files_unreadable_samples {
+    orig: [FileUnreadable("file.txt", "12345")],
+    backup: [FileUnreadable("file.txt", "12345")],
+    flags: ["-s", "1"],
+    lines: [
+        "ERROR: a/file.txt",
+        "ERROR: b/file.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Cannot read sample from"],
+    output_excludes: [],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 2,
+});
+
+// Original unreadable, backup readable with -s flag triggers sample OrigError handler
+// symmetric: false because reversed direction (backup unreadable) has different behavior:
+// unreadable backup causes MISSING to be reported (conservative behavior)
+case!(orig_unreadable_samples {
+    orig: [FileUnreadable("file.txt", "12345")],
+    backup: [File("file.txt", "12345")],
+    flags: ["-s", "1"],
+    lines: [
+        "ERROR: a/file.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Cannot read sample from"],
+    output_excludes: [],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 1,
+    symmetric: false,
+});
