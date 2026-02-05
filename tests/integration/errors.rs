@@ -1,167 +1,218 @@
-use std::os::unix::fs::PermissionsExt;
-use std::sync::Mutex;
-
-use super::{cmd, some_line_has, stdout_of, testdata, testdata_base};
+use super::harness::Entry::*;
+use super::{cmd, testdata};
+use crate::case;
 use predicates::prelude::*;
 
-/// Mutex to serialize tests that share the `unreadable` fixture's noperm.txt.
-/// Tests run in parallel by default; without this lock, one test's teardown
-/// can restore permissions while another test is between setup and execution.
-static UNREADABLE_LOCK: Mutex<()> = Mutex::new(());
+// ===========================================================================
+// case! macro tests for unreadable files and type mismatches
+// ===========================================================================
 
-/// Set up the unreadable file fixture at runtime (git doesn't preserve 000 perms).
-/// Also cleans up any stale dirs from unreadable-dir tests to avoid interference.
-fn setup_unreadable_file() {
-    let base = testdata_base("unreadable");
-    // Clean up any stale unreadable dirs that other tests might have left
-    for side in &["a", "b"] {
-        for name in &["noread_dir", "noread_dir_b"] {
-            let path = base.join(side).join(name);
-            if path.exists() {
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755));
-                let _ = std::fs::remove_dir_all(&path);
-            }
-        }
-    }
-    let path = base.join("b").join("noperm.txt");
-    let perms = std::fs::Permissions::from_mode(0o000);
-    std::fs::set_permissions(&path, perms).expect("failed to chmod noperm.txt");
-}
+// Unreadable file in backup reports ERROR, not DIFFERENT-FILE
+// Tests with --all flag to ensure hash comparison is attempted
+// The harness matching for "ERROR: noperm.txt" checks:
+//   - line starts with "ERROR"
+//   - line contains "noperm.txt"
+//
+// This test also covers:
+// - errors_cause_nonzero_exit: errors: 1, missing: 0, extras: 0
+// - error_file_not_counted_as_similarity: original_processed: 3, similarities: 2
+case!(unreadable_file_error_not_diff {
+    orig: [
+        File("file.txt", "readable\n"),
+        File("noperm.txt", "secret\n"),
+    ],
+    backup: [
+        File("file.txt", "readable\n"),
+        FileUnreadable("noperm.txt", "secret\n"),
+    ],
+    flags: ["--all"],
+    lines: [
+        "ERROR: noperm.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Errors: 1"],
+    output_excludes: ["DIFFERENT-FILE"],
+    original_processed: 3,
+    backup_processed: 3,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    // root + file.txt match, noperm.txt errors (not a similarity)
+    similarities: 2,
+    skipped: 0,
+    errors: 1,
+});
 
-/// Restore readable perms (cleanup for other tests / re-runs).
-fn teardown_unreadable_file() {
-    let path = testdata_base("unreadable").join("b").join("noperm.txt");
-    let perms = std::fs::Permissions::from_mode(0o644);
-    let _ = std::fs::set_permissions(&path, perms);
-}
+// Unreadable directory in original reports ERROR
+// Note: DirUnreadable creates an empty unreadable dir.
+// When orig dir is unreadable, we can't compare, so backup's contents are "extra"
+case!(unreadable_dir_in_original {
+    orig: [
+        File("ok.txt", "ok\n"),
+        DirUnreadable("noread_dir"),
+    ],
+    backup: [
+        File("ok.txt", "ok\n"),
+        Dir("noread_dir"),
+        File("noread_dir/hidden.txt", "hidden\n"),
+    ],
+    flags: [],
+    lines: [
+        "ERROR: noread_dir",
+        "EXTRA-DIR: b/noread_dir",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Errors: 1"],
+    output_excludes: [],
+    original_processed: 3,
+    backup_processed: 4,
+    missing: 0,
+    different: 0,
+    // noread_dir + hidden.txt = 2 extras (can't verify they match)
+    extras: 2,
+    special_files: 0,
+    // root + ok.txt match
+    similarities: 2,
+    skipped: 0,
+    errors: 1,
+});
 
-#[test]
-fn unreadable_file_reports_error_not_diff() {
-    let _lock = UNREADABLE_LOCK.lock().unwrap();
-    setup_unreadable_file();
-    let (a, b) = testdata("unreadable");
-    let assert = cmd().args([&a, &b, "--all"]).assert();
-    let output = stdout_of(&assert);
-    teardown_unreadable_file();
+// Unreadable directory in backup reports ERROR
+// When backup dir is unreadable, we can't compare, so orig's contents are "missing"
+case!(unreadable_dir_in_backup {
+    orig: [
+        File("ok.txt", "ok\n"),
+        Dir("noread_dir"),
+        File("noread_dir/file.txt", "test\n"),
+    ],
+    backup: [
+        File("ok.txt", "ok\n"),
+        DirUnreadable("noread_dir"),
+    ],
+    flags: [],
+    lines: [
+        "ERROR: noread_dir",
+        "MISSING-DIR: a/noread_dir",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Errors: 1"],
+    output_excludes: [],
+    original_processed: 4,
+    backup_processed: 3,
+    // noread_dir + file.txt = 2 missing (can't verify they match)
+    missing: 2,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    // root + ok.txt match
+    similarities: 2,
+    skipped: 0,
+    errors: 1,
+});
 
-    // ERROR: on stdout for piped analysis
-    assert!(
-        output.contains("ERROR:"),
-        "Expected ERROR: for unreadable file, got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Errors: 1"),
-        "Expected Errors: 1, got:\n{}",
-        output
-    );
-    // NOT reported as a content difference
-    assert!(
-        !some_line_has(&output, "DIFFERENT-FILE", "noperm.txt"),
-        "Unreadable file should be ERROR not DIFFERENT-FILE"
-    );
-}
+// Type mismatch: replicates testdata/type_mismatch exactly
+// a/ has: name_a/ (dir with child.txt), name_b (file), same.txt
+// b/ has: name_a (file), name_b/ (dir with child.txt), same.txt
+// Two type mismatches: name_a (dir vs file) and name_b (file vs dir)
+// Without -vv, top-level missing/extra are shown but not children inside dirs
+//
+// This test covers:
+// - dir_in_original_file_in_backup: FILE-DIR-MISMATCH for name_a, "dir vs file"
+// - file_in_original_dir_in_backup: FILE-DIR-MISMATCH for name_b, "file vs dir"
+// - type_mismatch_summary: all counts verified
+case!(type_mismatch_combined {
+    orig: [
+        Dir("name_a"),
+        File("name_a/child.txt", "inside dir"),
+        File("name_b", "i am a file"),
+        File("same.txt", "same"),
+    ],
+    backup: [
+        File("name_a", "i am a file"),
+        Dir("name_b"),
+        File("name_b/child.txt", "inside dir"),
+        File("same.txt", "same"),
+    ],
+    flags: [],
+    lines: [
+        "FILE-DIR-MISMATCH: a/name_a",
+        "MISSING-DIR: a/name_a",
+        "EXTRA-FILE: b/name_a",
+        "FILE-DIR-MISMATCH: a/name_b",
+        "MISSING-FILE: a/name_b",
+        "EXTRA-DIR: b/name_b",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["dir vs file", "file vs dir"],
+    output_excludes: [],
+    // root + name_a dir + name_a/child.txt + name_b file + same.txt = 5
+    original_processed: 5,
+    // root + name_a file + name_b dir + name_b/child.txt + same.txt = 5
+    backup_processed: 5,
+    // name_a (missing-dir) + name_a/child.txt + name_b (missing-file) = 3
+    missing: 3,
+    // name_a (type) + name_b (type) = 2
+    different: 2,
+    // name_a (extra-file) + name_b (extra-dir) + name_b/child.txt = 3
+    extras: 3,
+    special_files: 0,
+    // root + same.txt = 2
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
 
-// ── Type mismatch ────────────────────────────────────────────
+// Type mismatch with -vv shows all missing/extra items individually
+// This test covers:
+// - type_mismatch_dir_orig_counts_missing_contents: MISSING-FILE for child.txt
+// - type_mismatch_dir_backup_counts_extra_contents: EXTRA-FILE for child.txt
+case!(type_mismatch_combined_vv {
+    orig: [
+        Dir("name_a"),
+        File("name_a/child.txt", "inside dir"),
+        File("name_b", "i am a file"),
+        File("same.txt", "same"),
+    ],
+    backup: [
+        File("name_a", "i am a file"),
+        Dir("name_b"),
+        File("name_b/child.txt", "inside dir"),
+        File("same.txt", "same"),
+    ],
+    flags: ["-vv"],
+    lines: [
+        "FILE-DIR-MISMATCH: a/name_a",
+        "MISSING-DIR: a/name_a",
+        "MISSING-FILE: a/name_a/child.txt",
+        "EXTRA-FILE: b/name_a",
+        "FILE-DIR-MISMATCH: a/name_b",
+        "MISSING-FILE: a/name_b",
+        "EXTRA-DIR: b/name_b",
+        "EXTRA-FILE: b/name_b/child.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["dir vs file", "file vs dir"],
+    output_excludes: [],
+    original_processed: 5,
+    backup_processed: 5,
+    missing: 3,
+    different: 2,
+    extras: 3,
+    special_files: 0,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn dir_in_original_file_in_backup() {
-    let (a, b) = testdata("type_mismatch");
-    let assert = cmd().args([&a, &b]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    // name_a is a dir in a/, a file in b/
-    assert!(
-        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_a"),
-        "Expected DIFFERENT-FILE [TYPE] for name_a (dir vs file), got:\n{}",
-        output
-    );
-    assert!(output.contains("dir vs file"), "Expected 'dir vs file'");
-}
-
-#[test]
-fn file_in_original_dir_in_backup() {
-    let (a, b) = testdata("type_mismatch");
-    let assert = cmd().args([&a, &b]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    // name_b is a file in a/, a dir in b/
-    assert!(
-        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_b"),
-        "Expected DIFFERENT-FILE [TYPE] for name_b (file vs dir), got:\n{}",
-        output
-    );
-    assert!(output.contains("file vs dir"), "Expected 'file vs dir'");
-}
-
-#[test]
-fn type_mismatch_summary() {
-    let (a, b) = testdata("type_mismatch");
-    let assert = cmd().args([&a, &b]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    // a/ has: root + name_a/ (dir) + name_a/child.txt + name_b (file) + same.txt = 5 items
-    // b/ has: root + name_a (file) + name_b/ (dir) + name_b/child.txt + same.txt = 5 items
-    // Cat1: type mismatch reports BOTH sides
-    // name_a: TYPE mismatch (dir vs file), MISSING-DIR (dir + child.txt) + EXTRA-FILE
-    // name_b: TYPE mismatch (file vs dir), MISSING-FILE + EXTRA-DIR (dir + child.txt)
-    assert!(output.contains("Original items processed: 5"), "got:\n{}", output);
-    assert!(output.contains("Backup items processed: 5"), "got:\n{}", output);
-    // Missing: name_a (missing-dir) + name_a/child.txt (missing) + name_b (missing-file) = 3
-    assert!(output.contains("Missing: 3"), "got:\n{}", output);
-    // Different: name_a (type) + name_b (type) = 2
-    assert!(output.contains("Different: 2"), "got:\n{}", output);
-    // Extras: name_a (extra-file) + name_b (extra-dir) + name_b/child.txt = 3
-    assert!(output.contains("Extras: 3"), "got:\n{}", output);
-    // Similarities: root + same.txt = 2
-    assert!(output.contains("Similarities: 2"), "got:\n{}", output);
-}
-
-#[test]
-fn type_mismatch_dir_orig_counts_missing_contents() {
-    // When original has a dir and backup has a file with the same name,
-    // the directory's contents should be counted as missing.
-    let (a, b) = testdata("type_mismatch");
-    let assert = cmd().args([&a, &b, "-v", "-v"]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    // name_a is a dir in a/ with child.txt, a file in b/
-    assert!(
-        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_a"),
-        "Expected type mismatch for name_a, got:\n{}",
-        output
-    );
-    // child.txt inside the dir should be counted as missing
-    assert!(
-        some_line_has(&output, "MISSING-FILE:", "child.txt"),
-        "Expected MISSING-FILE for child.txt inside type-mismatched dir, got:\n{}",
-        output
-    );
-}
-
-#[test]
-fn type_mismatch_dir_backup_counts_extra_contents() {
-    // When original has a file and backup has a dir with the same name,
-    // the directory's contents should be counted as extras.
-    let (a, b) = testdata("type_mismatch");
-    let assert = cmd().args([&a, &b, "-v", "-v"]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    // name_b is a file in a/, a dir in b/ with child.txt
-    assert!(
-        some_line_has(&output, "FILE-DIR-MISMATCH:", "name_b"),
-        "Expected type mismatch for name_b, got:\n{}",
-        output
-    );
-    // child.txt inside the backup dir should be counted as extra
-    assert!(
-        some_line_has(&output, "EXTRA-FILE:", "child.txt"),
-        "Expected EXTRA-FILE for child.txt inside type-mismatched backup dir, got:\n{}",
-        output
-    );
-}
-
-// ── CLI validation ───────────────────────────────────────────
+// ===========================================================================
+// CLI validation tests (these test argument validation, not file comparison)
+// ===========================================================================
 
 #[test]
 fn nonexistent_original_exits_2() {
@@ -213,142 +264,4 @@ fn backup_is_file_not_dir() {
         .assert()
         .code(2)
         .stderr(predicate::str::contains("is not a directory"));
-}
-
-// ── Error counting edge cases ───────────────────────────────
-
-#[test]
-fn errors_cause_nonzero_exit() {
-    // Errors should cause a non-zero exit even when there are no missing/different/extras.
-    let _lock = UNREADABLE_LOCK.lock().unwrap();
-    setup_unreadable_file();
-    let (a, b) = testdata("unreadable");
-    let assert = cmd().args([&a, &b, "--all"]).assert();
-    let output = stdout_of(&assert);
-    let code = assert.get_output().status.code().unwrap();
-    teardown_unreadable_file();
-
-    assert!(
-        output.contains("Errors: 1"),
-        "Expected Errors: 1, got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Missing: 0"),
-        "Expected no differences, got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Extras: 0"),
-        "Expected no extras, got:\n{}",
-        output
-    );
-    // Errors alone should trigger non-zero exit
-    assert_eq!(
-        code, 1,
-        "Expected exit 1 when errors occurred, got {}",
-        code
-    );
-}
-
-#[test]
-fn error_file_not_counted_as_similarity() {
-    // When compare_file returns None (error), the file must NOT be counted as a similarity.
-    // Similarities should only count items that were actually verified to match.
-    let _lock = UNREADABLE_LOCK.lock().unwrap();
-    setup_unreadable_file();
-    let (a, b) = testdata("unreadable");
-    let assert = cmd().args([&a, &b, "--all"]).assert();
-    let output = stdout_of(&assert);
-    teardown_unreadable_file();
-
-    // 3 original items: root + file.txt + noperm.txt
-    // noperm.txt errors → not a similarity
-    // root + file.txt match → 2 similarities
-    assert!(
-        output.contains("Original items processed: 3"),
-        "got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Similarities: 2"),
-        "Errored file should not count as similarity, got:\n{}",
-        output
-    );
-}
-
-// ── Unreadable directories ──────────────────────────────────
-
-#[test]
-fn unreadable_directory_in_original() {
-    // Use a temporary directory to avoid interfering with other tests
-    let tmp = std::env::temp_dir().join("bv_test_unreadable_dir_orig");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(a.join("noread_dir")).unwrap();
-    std::fs::create_dir_all(b.join("noread_dir")).unwrap();
-    std::fs::write(a.join("noread_dir").join("hidden.txt"), "hidden\n").unwrap();
-    std::fs::write(b.join("noread_dir").join("hidden.txt"), "hidden\n").unwrap();
-    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
-    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
-
-    // Make a's noread_dir unreadable
-    let perms = std::fs::Permissions::from_mode(0o000);
-    std::fs::set_permissions(a.join("noread_dir"), perms).unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd().args([&a_str, &b_str]).assert();
-    let output = stdout_of(&assert);
-
-    // Cleanup
-    let _ = std::fs::set_permissions(
-        a.join("noread_dir"),
-        std::fs::Permissions::from_mode(0o755),
-    );
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    assert!(
-        some_line_has(&output, "ERROR:", "noread_dir"),
-        "Expected ERROR for unreadable directory in original, got:\n{}",
-        output
-    );
-}
-
-#[test]
-fn unreadable_directory_in_backup() {
-    // Use a temporary directory to avoid interfering with other tests
-    let tmp = std::env::temp_dir().join("bv_test_unreadable_dir_backup");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(a.join("noread_dir")).unwrap();
-    std::fs::create_dir_all(b.join("noread_dir")).unwrap();
-    std::fs::write(a.join("noread_dir").join("file.txt"), "test\n").unwrap();
-    std::fs::write(b.join("noread_dir").join("file.txt"), "test\n").unwrap();
-    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
-    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
-
-    // Make only b's noread_dir unreadable
-    let perms = std::fs::Permissions::from_mode(0o000);
-    std::fs::set_permissions(b.join("noread_dir"), perms).unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd().args([&a_str, &b_str]).assert();
-    let output = stdout_of(&assert);
-
-    // Cleanup
-    let _ = std::fs::set_permissions(
-        b.join("noread_dir"),
-        std::fs::Permissions::from_mode(0o755),
-    );
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    assert!(
-        some_line_has(&output, "ERROR:", "noread_dir"),
-        "Expected ERROR for unreadable backup directory, got:\n{}",
-        output
-    );
 }

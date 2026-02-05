@@ -584,29 +584,6 @@ pub fn run_and_check_full(
     }
 }
 
-/// Run vfy and check output lines + summary counts (no DEBUG or output checking).
-pub fn run_and_check(
-    label: &str,
-    tmp: &Path,
-    orig_entries: &[Entry],
-    backup_entries: &[Entry],
-    flags: &[&str],
-    expected_lines: &[&str],
-    counts: &Counts,
-) {
-    run_and_check_full(
-        label,
-        tmp,
-        orig_entries,
-        backup_entries,
-        flags,
-        expected_lines,
-        None,
-        None,
-        counts,
-    );
-}
-
 /// Main entry point for case! macro: runs forward and reversed tests.
 pub fn check(
     name: &str,

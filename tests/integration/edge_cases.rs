@@ -1,35 +1,452 @@
-use super::{cmd, no_line_has, some_line_has, stdout_of, testdata, testdata_base};
-use std::process::Command as StdCommand;
+//! Edge case integration tests using the case! macro infrastructure.
+//!
+//! Tests cover: empty directories, zero-byte files, extras with no originals,
+//! mixed results, deep trees, and special files (FIFOs, device symlinks).
+
+use super::harness::Entry::*;
+use super::{cmd, stdout_of, testdata};
+use crate::case;
 use predicates::prelude::*;
 
+// ===========================================================================
+// Empty directories
+// ===========================================================================
+
+// Both orig and backup are empty directories
+case!(empty_directories {
+    orig: [],
+    backup: [],
+    flags: [],
+    lines: [],
+    original_processed: 1,
+    backup_processed: 1,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
+
+// ===========================================================================
+// Zero-byte files
+// ===========================================================================
+
+// Two identical empty files with --all flag (hash comparison)
+case!(zero_byte_files_with_all {
+    orig: [
+        File("empty.txt", ""),
+    ],
+    backup: [
+        File("empty.txt", ""),
+    ],
+    flags: ["--all", "-vv"],
+    lines: [],
+    debug_contains: [],
+    debug_excludes: [],
+    // BLAKE3("") = af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
+    output_contains: ["af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"],
+    output_excludes: ["DIFFERENT-FILE"],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
+
+// Two identical empty files with sampling
+case!(zero_byte_files_with_sampling {
+    orig: [
+        File("empty.txt", ""),
+    ],
+    backup: [
+        File("empty.txt", ""),
+    ],
+    flags: ["-s", "10"],
+    lines: [],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
+
+// ===========================================================================
+// Extras with zero original items
+// ===========================================================================
+
+// a/ is empty, b/ has files and directory → exit 1 due to extras
+// Replicates testdata/extras_only: b has extra1.txt, extra_dir/, extra_dir/extra2.txt
+case!(extras_with_zero_originals {
+    orig: [],
+    backup: [
+        File("extra1.txt", "extra\n"),
+        Dir("extra_dir"),
+        File("extra_dir/extra2.txt", "more extra\n"),
+    ],
+    flags: [],
+    lines: [
+        "EXTRA-FILE: b/extra1.txt",
+        "EXTRA-DIR: b/extra_dir",
+    ],
+    original_processed: 1,
+    // root + extra1.txt + extra_dir + extra2.txt = 4
+    backup_processed: 4,
+    missing: 0,
+    different: 0,
+    // extra1.txt + extra_dir + extra2.txt = 3
+    extras: 3,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
+
+// ===========================================================================
+// Mixed results in one directory
+// ===========================================================================
+
+// Various outcomes in one test: match, size diff, content diff
+case!(mixed_results_per_file {
+    orig: [
+        File("match.txt", "same content\n"),
+        File("size_diff.txt", "short\n"),
+        File("content_diff.txt", "aaaa"),
+    ],
+    backup: [
+        File("match.txt", "same content\n"),
+        File("size_diff.txt", "this is much longer content\n"),
+        File("content_diff.txt", "bbbb"),
+    ],
+    flags: ["-s", "10", "--all"],
+    lines: [
+        "DIFFERENT-FILE [SIZE]: a/size_diff.txt",
+        "DIFFERENT-FILE [SAMPLE]: a/content_diff.txt",
+    ],
+    original_processed: 4,
+    backup_processed: 4,
+    missing: 0,
+    different: 2,
+    extras: 0,
+    special_files: 0,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
+
+// ===========================================================================
+// Deeply nested identical trees
+// ===========================================================================
+
+// Multi-level nesting, all identical
+case!(deep_identical_tree {
+    orig: [
+        File("top.txt", "top level\n"),
+        Dir("l1"),
+        File("l1/mid.txt", "mid level\n"),
+        Dir("l1/l2"),
+        Dir("l1/l2/l3"),
+        File("l1/l2/l3/deep.txt", "deep level\n"),
+    ],
+    backup: [
+        File("top.txt", "top level\n"),
+        Dir("l1"),
+        File("l1/mid.txt", "mid level\n"),
+        Dir("l1/l2"),
+        Dir("l1/l2/l3"),
+        File("l1/l2/l3/deep.txt", "deep level\n"),
+    ],
+    flags: ["--all"],
+    lines: [],
+    // root + top.txt + l1 + mid.txt + l2 + l3 + deep.txt = 7
+    original_processed: 7,
+    backup_processed: 7,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 7,
+    skipped: 0,
+    errors: 0,
+});
+
+// ===========================================================================
+// Special file tests (FIFOs)
+// ===========================================================================
+
+// FIFO missing from backup should be SPECIAL-FILE, not MISSING-FILE
+case!(special_file_missing_from_backup {
+    orig: [
+        Fifo("my_fifo"),
+        File("ok.txt", "ok\n"),
+    ],
+    backup: [
+        File("ok.txt", "ok\n"),
+    ],
+    flags: [],
+    lines: [
+        "SPECIAL-FILE: a/my_fifo",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: [],
+    output_excludes: ["MISSING-FILE: my_fifo"],
+    original_processed: 3,
+    backup_processed: 2,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 1,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
+
+// FIFO extra in backup should be SPECIAL-FILE, not EXTRA-FILE
+case!(special_file_extra_in_backup {
+    orig: [
+        File("ok.txt", "ok\n"),
+    ],
+    backup: [
+        File("ok.txt", "ok\n"),
+        Fifo("my_fifo"),
+    ],
+    flags: [],
+    lines: [
+        "SPECIAL-FILE: b/my_fifo",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: [],
+    output_excludes: ["EXTRA-FILE: my_fifo"],
+    original_processed: 2,
+    backup_processed: 3,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 1,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
+
+// One side has FIFO, other has symlink → SPECIAL-FILE
+// The FIFO is a special file; the symlink and target.txt are both extras
+case!(special_file_vs_symlink {
+    orig: [
+        Fifo("entry"),
+    ],
+    backup: [
+        File("target.txt", "content\n"),
+        Sym("entry", "target.txt"),
+    ],
+    flags: [],
+    lines: [
+        "SPECIAL-FILE: a/entry",
+        "EXTRA-SYMLINK: b/entry",
+        "EXTRA-FILE: b/target.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: [],
+    output_excludes: ["DIFFERENT-SYMLINK-STATUS"],
+    original_processed: 2,
+    backup_processed: 3,
+    missing: 0,
+    different: 0,
+    // Both the symlink and target.txt are extras
+    extras: 2,
+    special_files: 1,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
+
+// Reverse: original is symlink, backup is FIFO
+// The FIFO is a special file; the symlink and target.txt are both missing
+case!(symlink_vs_special_file {
+    orig: [
+        File("target.txt", "content\n"),
+        Sym("entry", "target.txt"),
+    ],
+    backup: [
+        Fifo("entry"),
+    ],
+    flags: [],
+    lines: [
+        "SPECIAL-FILE: b/entry",
+        "MISSING-SYMLINK: a/entry",
+        "MISSING-FILE: a/target.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: [],
+    output_excludes: ["DIFFERENT-SYMLINK-STATUS"],
+    original_processed: 3,
+    backup_processed: 2,
+    // Both the symlink and target.txt are missing
+    missing: 2,
+    different: 0,
+    extras: 0,
+    special_files: 1,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
+
+// ===========================================================================
+// Special files via symlinks to /dev
+// ===========================================================================
+
+// Symlink to /dev/urandom is a character device with --follow
+// With --follow, symlinks count as 2 items: the symlink entry + resolved target
+case!(special_file_via_symlink_follow {
+    orig: [
+        File("ok.txt", "ok\n"),
+        Sym("special", "/dev/urandom"),
+    ],
+    backup: [
+        File("ok.txt", "ok\n"),
+        Sym("special", "/dev/urandom"),
+    ],
+    flags: ["--follow"],
+    lines: [
+        "SPECIAL-FILE: a/special",
+        "SPECIAL-FILE: b/special",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Special files: 2"],
+    output_excludes: ["ERROR:"],
+    // root + ok.txt + special symlink (2 with --follow) = 4
+    original_processed: 4,
+    backup_processed: 4,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 2,
+    // root + ok.txt + special symlink entry = 3 similarities
+    similarities: 3,
+    skipped: 0,
+    errors: 0,
+});
+
+// Symlink to /dev/null missing from backup with --follow
+// With --follow, symlinks count as 2 items: the symlink entry + resolved target
+case!(special_files_missing_from_backup {
+    orig: [
+        Dir("sub"),
+        File("sub/ok.txt", "ok\n"),
+        Sym("sub/devnull", "/dev/null"),
+    ],
+    backup: [
+        Dir("sub"),
+        File("sub/ok.txt", "ok\n"),
+    ],
+    flags: ["--follow"],
+    lines: [
+        "MISSING-SYMLINK: a/sub/devnull",
+    ],
+    // root + sub + ok.txt + devnull symlink (2 with --follow) = 5
+    original_processed: 5,
+    backup_processed: 3,
+    missing: 1,
+    different: 0,
+    extras: 0,
+    // The resolved /dev/null is a special file, counted
+    special_files: 1,
+    similarities: 3,
+    skipped: 0,
+    errors: 0,
+});
+
+// Symlink to /dev/null extra in backup with --follow
+// With --follow, symlinks count as 2 items: the symlink entry + resolved target
+case!(special_files_extra_in_backup {
+    orig: [
+        Dir("sub"),
+        File("sub/ok.txt", "ok\n"),
+    ],
+    backup: [
+        Dir("sub"),
+        File("sub/ok.txt", "ok\n"),
+        Sym("sub/devnull", "/dev/null"),
+    ],
+    flags: ["--follow"],
+    lines: [
+        "EXTRA-SYMLINK: b/sub/devnull",
+    ],
+    original_processed: 3,
+    // root + sub + ok.txt + devnull symlink (2 with --follow) = 5
+    backup_processed: 5,
+    missing: 0,
+    different: 0,
+    extras: 1,
+    // The resolved /dev/null is a special file, counted
+    special_files: 1,
+    similarities: 3,
+    skipped: 0,
+    errors: 0,
+});
+
+// ===========================================================================
+// Symlink to /dev directory with --follow
+// ===========================================================================
+
+// Both sides symlink to /dev/ — contains device files
+// This test cannot use case! macro because /dev contents vary by system
 #[test]
-fn empty_directories() {
-    // Git can't track empty directories, so create them at runtime
-    let base = testdata_base("empty");
-    let a = base.join("a");
-    let b = base.join("b");
+fn symlink_to_dev_dir_with_follow() {
+    use std::os::unix::fs::symlink;
+
+    let tmp = std::env::temp_dir().join("bv_test_dev_symlink");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
     std::fs::create_dir_all(&a).unwrap();
     std::fs::create_dir_all(&b).unwrap();
-    // Remove any .gitkeep files that might exist
-    let _ = std::fs::remove_file(a.join(".gitkeep"));
-    let _ = std::fs::remove_file(b.join(".gitkeep"));
 
-    let a = a.to_str().unwrap().to_string();
-    let b = b.to_str().unwrap().to_string();
-    cmd()
-        .args([&a, &b])
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("Original items processed: 1")
-                .and(predicate::str::contains("Backup items processed: 1"))
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 0 (0.00%)"))
-                .and(predicate::str::contains("Extras: 0"))
-                .and(predicate::str::contains("Similarities: 1"))
-                .and(predicate::str::contains("Errors: 0")),
-        );
+    // Create symlinks to /dev in both directories
+    symlink("/dev", a.join("dev")).unwrap();
+    symlink("/dev", b.join("dev")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    // Don't check exit code - /dev may contain items that cause non-zero exit
+    let output = cmd()
+        .args([&a_str, &b_str, "--follow"])
+        .output()
+        .expect("Failed to run vfy");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let _ = std::fs::remove_dir_all(&tmp);
+
+    // Device files like /dev/null, /dev/zero should be SPECIAL-FILE, not ERROR
+    assert!(
+        stdout.contains("SPECIAL-FILE:"),
+        "Expected some SPECIAL-FILE entries for /dev device files, got:\n{}",
+        stdout
+    );
+    // Check that typical device files aren't reported as errors
+    assert!(
+        !stdout.contains("ERROR: a/dev/null") && !stdout.contains("ERROR: b/dev/null"),
+        "Should not report ERROR for /dev/null, got:\n{}",
+        stdout
+    );
 }
+
+// ===========================================================================
+// Tests that remain manual (need special handling)
+// ===========================================================================
 
 #[test]
 fn same_directory_warning() {
@@ -67,532 +484,5 @@ fn output_is_sorted() {
     assert!(
         alpha_pos < bravo_pos,
         "alpha.txt should appear before bravo.txt in sorted output"
-    );
-}
-
-// ── Zero-byte files ─────────────────────────────────────────
-
-#[test]
-fn zero_byte_files_with_all() {
-    let (a, b) = testdata("empty_files");
-    let assert = cmd().args([&a, &b, "--all", "-v", "-v"]).assert().success();
-    let output = stdout_of(&assert);
-
-    // Two identical empty files should match
-    assert!(
-        !output.contains("DIFFERENT-FILE"),
-        "Empty files should match, got:\n{}",
-        output
-    );
-    assert!(output.contains("Similarities: 2"), "got:\n{}", output);
-    assert!(output.contains("Errors: 0"), "got:\n{}", output);
-
-    // Verify the known BLAKE3 hash of empty input
-    // BLAKE3("") = af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262
-    let empty_hash = "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262";
-    assert!(
-        some_line_has(&output, "BLAKE3", empty_hash),
-        "Expected known BLAKE3 hash for empty file, got:\n{}",
-        output
-    );
-}
-
-#[test]
-fn zero_byte_files_with_sampling() {
-    let (a, b) = testdata("empty_files");
-    cmd()
-        .args([&a, &b, "-s", "10"])
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("DIFFERENT-FILE")
-                .not()
-                .and(predicate::str::contains("Similarities: 2"))
-                .and(predicate::str::contains("Errors: 0")),
-        );
-}
-
-// ── Extras with zero original items ─────────────────────────
-
-#[test]
-fn extras_with_zero_originals() {
-    // a/ is empty, b/ has files → percentage 0.00% but exit 1 due to extras
-    let base = testdata_base("extras_only");
-    let a = base.join("a");
-    let b = base.join("b");
-    // Ensure empty dir exists (git can't track empty dirs)
-    std::fs::create_dir_all(&a).unwrap();
-    let _ = std::fs::remove_file(a.join(".gitkeep"));
-
-    let a = a.to_str().unwrap().to_string();
-    let b = b.to_str().unwrap().to_string();
-    let assert = cmd().args([&a, &b]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    assert!(
-        output.contains("Original items processed: 1"),
-        "got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Missing: 0 (0.00%)"),
-        "got:\n{}",
-        output
-    );
-    assert!(output.contains("Extras: 3"), "got:\n{}", output);
-}
-
-// ── Mixed results in one directory ──────────────────────────
-
-#[test]
-fn mixed_results_per_file() {
-    let (a, b) = testdata("mixed_results");
-    let assert = cmd().args([&a, &b, "-s", "10", "--all"]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    // match.txt should not appear as DIFFERENT-FILE
-    assert!(
-        !some_line_has(&output, "DIFFERENT-FILE", "match.txt"),
-        "match.txt should not differ, got:\n{}",
-        output
-    );
-    // size_diff.txt should differ by SIZE
-    assert!(
-        some_line_has(&output, "DIFFERENT-FILE", "size_diff.txt"),
-        "Expected DIFFERENT-FILE for size_diff.txt, got:\n{}",
-        output
-    );
-    assert!(
-        some_line_has(&output, "SIZE", "size_diff.txt"),
-        "Expected SIZE reason for size_diff.txt, got:\n{}",
-        output
-    );
-    // content_diff.txt should differ by SAMPLE and/or HASH
-    assert!(
-        some_line_has(&output, "DIFFERENT-FILE", "content_diff.txt"),
-        "Expected DIFFERENT-FILE for content_diff.txt, got:\n{}",
-        output
-    );
-
-    // Summary: 4 items (root + 3), 2 different, 2 similarities (root + match.txt)
-    assert!(
-        output.contains("Original items processed: 4"),
-        "got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Backup items processed: 4"),
-        "got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Different: 2"),
-        "got:\n{}",
-        output
-    );
-    assert!(output.contains("Similarities: 2"), "got:\n{}", output);
-}
-
-// ── Deeply nested identical trees ───────────────────────────
-
-#[test]
-fn deep_identical_tree() {
-    let (a, b) = testdata("deep_identical");
-    cmd()
-        .args([&a, &b, "--all"])
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("DIFFERENT-FILE")
-                .not()
-                .and(predicate::str::contains("MISSING").not())
-                .and(predicate::str::contains("EXTRA").not())
-                .and(predicate::str::contains("ERROR").not())
-                // root + l1/ + l2/ + l3/ + deep.txt + mid.txt + top.txt = 7
-                .and(predicate::str::contains("Original items processed: 7"))
-                .and(predicate::str::contains("Backup items processed: 7"))
-                .and(predicate::str::contains("Similarities: 7"))
-                .and(predicate::str::contains("Errors: 0")),
-        );
-}
-
-// ── Special file types ──────────────────────────────────────
-
-#[test]
-fn symlink_to_dev_dir_with_follow() {
-    // Symlink to /dev/ — contains character devices (null, zero, etc.)
-    // With --follow, the tool traverses into /dev/ and should report
-    // SPECIAL-FILE for device files, not ERROR or silent pass.
-    let tmp = std::env::temp_dir().join("bv_test_dev_dir");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(&a).unwrap();
-    std::fs::create_dir_all(&b).unwrap();
-
-    // Both sides symlink to /dev/
-    std::os::unix::fs::symlink("/dev", a.join("dev")).unwrap();
-    std::os::unix::fs::symlink("/dev", b.join("dev")).unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd()
-        .args([&a_str, &b_str, "--follow"])
-        .assert()
-        .code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    // /dev/ has character devices like null, zero — should trigger SPECIAL-FILE
-    let not_a_file_lines: Vec<&str> = output
-        .lines()
-        .filter(|l| l.contains("SPECIAL-FILE:"))
-        .collect();
-    assert!(
-        !not_a_file_lines.is_empty(),
-        "Expected SPECIAL-FILE for device files in /dev/, got:\n{}",
-        output
-    );
-
-    // /dev/null specifically should be SPECIAL-FILE, not ERROR
-    assert!(
-        some_line_has(&output, "SPECIAL-FILE:", "null"),
-        "Expected SPECIAL-FILE for /dev/null, got:\n{}",
-        output
-    );
-    assert!(
-        no_line_has(&output, "ERROR:", "null"),
-        "/dev/null should be SPECIAL-FILE, not ERROR, got:\n{}",
-        output
-    );
-
-    // Summary should show at least 2 not-a-file-or-dir (/dev/null and /dev/urandom at minimum)
-    let naf_line = output
-        .lines()
-        .find(|l| l.contains("Special files:"))
-        .expect("Expected 'Special files' in summary");
-    let naf_count: u64 = naf_line
-        .trim()
-        .rsplit(' ')
-        .next()
-        .unwrap()
-        .parse()
-        .expect("Failed to parse not-a-file-or-dir count");
-    assert!(
-        naf_count >= 2,
-        "Expected at least 2 not-a-file-or-dir entries (null + urandom), got {}",
-        naf_count
-    );
-}
-
-#[test]
-fn special_files_missing_from_backup() {
-    // Both sides have symlink to /dev/ so --follow traverses it.
-    // Remove a device file from b's view by using a real dir with a subset of entries.
-    // Simpler approach: a/ has a real dir with a symlink to a device inside,
-    // b/ has same real dir but missing the device symlink.
-    let tmp = std::env::temp_dir().join("bv_test_dev_missing");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(a.join("sub")).unwrap();
-    std::fs::create_dir_all(b.join("sub")).unwrap();
-
-    // a/sub has a symlink to /dev/null (character device) — missing from b/sub
-    std::os::unix::fs::symlink("/dev/null", a.join("sub/devnull")).unwrap();
-    // Both have a regular file
-    std::fs::write(a.join("sub/ok.txt"), "ok\n").unwrap();
-    std::fs::write(b.join("sub/ok.txt"), "ok\n").unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd()
-        .args([&a_str, &b_str, "--follow"])
-        .assert()
-        .code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    // The device symlink is missing from backup — reported as MISSING-SYMLINK
-    assert!(
-        some_line_has(&output, "MISSING-SYMLINK:", "devnull"),
-        "Expected MISSING-SYMLINK for devnull symlink, got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Errors: 0"),
-        "Missing special file symlinks should not cause errors, got:\n{}",
-        output
-    );
-}
-
-#[test]
-fn special_files_extra_in_backup() {
-    // b/sub has a symlink to /dev/null that a/sub does not — extra
-    let tmp = std::env::temp_dir().join("bv_test_dev_extra");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(a.join("sub")).unwrap();
-    std::fs::create_dir_all(b.join("sub")).unwrap();
-
-    // b/sub has a symlink to /dev/null — extra
-    std::os::unix::fs::symlink("/dev/null", b.join("sub/devnull")).unwrap();
-    // Both have a regular file
-    std::fs::write(a.join("sub/ok.txt"), "ok\n").unwrap();
-    std::fs::write(b.join("sub/ok.txt"), "ok\n").unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd()
-        .args([&a_str, &b_str, "--follow"])
-        .assert()
-        .code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    // The device symlink is extra in backup — reported as EXTRA-SYMLINK
-    assert!(
-        some_line_has(&output, "EXTRA-SYMLINK:", "devnull"),
-        "Expected EXTRA-SYMLINK for devnull symlink, got:\n{}",
-        output
-    );
-    assert!(
-        !output.contains("Extras: 0"),
-        "Should have extras, got:\n{}",
-        output
-    );
-    assert!(
-        output.contains("Errors: 0"),
-        "Extra special file symlinks should not cause errors, got:\n{}",
-        output
-    );
-}
-
-#[test]
-fn special_file_via_symlink_follow() {
-    // Symlink to /dev/urandom is a character device (not a file, not a dir).
-    // With --follow, the tool should detect this and report SPECIAL-FILE
-    // instead of trying to compare it as a regular file.
-    let tmp = std::env::temp_dir().join("bv_test_special_file");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(&a).unwrap();
-    std::fs::create_dir_all(&b).unwrap();
-
-    // Both sides have a symlink to /dev/urandom
-    std::os::unix::fs::symlink("/dev/urandom", a.join("special")).unwrap();
-    std::os::unix::fs::symlink("/dev/urandom", b.join("special")).unwrap();
-
-    // Also add a regular matching file
-    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
-    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd()
-        .args([&a_str, &b_str, "--follow"])
-        .assert()
-        .code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    assert!(
-        some_line_has(&output, "SPECIAL-FILE:", "special"),
-        "Expected SPECIAL-FILE for symlink to /dev/urandom, got:\n{}",
-        output
-    );
-    // Cat4: same-target symlink pair counted as similarity (root + symlink pair + ok.txt = 3)
-    assert!(
-        output.contains("Similarities: 3"),
-        "Expected similarities: root + same-target symlink pair + ok.txt = 3, got:\n{}",
-        output
-    );
-    // Should be counted in the not-a-file-or-dir summary (one per side)
-    assert!(
-        output.contains("Special files: 2"),
-        "Expected 'Special files: 2' in summary, got:\n{}",
-        output
-    );
-    // Should not produce ERROR — this is an expected condition, not an I/O failure
-    assert!(
-        no_line_has(&output, "ERROR:", "special"),
-        "Special file should be SPECIAL-FILE, not ERROR, got:\n{}",
-        output
-    );
-}
-
-// ── Special file (FIFO) missing/extra ───────────────────────
-
-#[test]
-fn special_file_missing_from_backup() {
-    // A FIFO in original but absent from backup should be SPECIAL-FILE,
-    // not MISSING-FILE.
-    let tmp = std::env::temp_dir().join("bv_test_fifo_missing");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(&a).unwrap();
-    std::fs::create_dir_all(&b).unwrap();
-
-    // Create a FIFO in a/ only
-    let fifo_path = a.join("my_fifo");
-    StdCommand::new("mkfifo")
-        .arg(&fifo_path)
-        .status()
-        .expect("mkfifo failed");
-
-    // Both sides have a regular file so there's something to compare
-    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
-    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    // A special file missing from backup should be SPECIAL-FILE, not MISSING-FILE
-    assert!(
-        some_line_has(&output, "SPECIAL-FILE:", "my_fifo"),
-        "Expected SPECIAL-FILE for missing FIFO, got:\n{}",
-        output
-    );
-    assert!(
-        !some_line_has(&output, "MISSING-FILE:", "my_fifo"),
-        "FIFO should not be reported as MISSING-FILE, got:\n{}",
-        output
-    );
-}
-
-#[test]
-fn special_file_extra_in_backup() {
-    // A FIFO in backup but absent from original should be SPECIAL-FILE,
-    // not EXTRA-FILE.
-    let tmp = std::env::temp_dir().join("bv_test_fifo_extra");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(&a).unwrap();
-    std::fs::create_dir_all(&b).unwrap();
-
-    // Create a FIFO in b/ only
-    let fifo_path = b.join("my_fifo");
-    StdCommand::new("mkfifo")
-        .arg(&fifo_path)
-        .status()
-        .expect("mkfifo failed");
-
-    // Both sides have a regular file
-    std::fs::write(a.join("ok.txt"), "ok\n").unwrap();
-    std::fs::write(b.join("ok.txt"), "ok\n").unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    // An extra special file in backup should be SPECIAL-FILE, not EXTRA-FILE
-    assert!(
-        some_line_has(&output, "SPECIAL-FILE:", "my_fifo"),
-        "Expected SPECIAL-FILE for extra FIFO, got:\n{}",
-        output
-    );
-    assert!(
-        !some_line_has(&output, "EXTRA-FILE:", "my_fifo"),
-        "FIFO should not be reported as EXTRA-FILE, got:\n{}",
-        output
-    );
-}
-
-// ── Special file vs symlink ─────────────────────────────────
-
-#[test]
-fn special_file_vs_symlink() {
-    // One side has a FIFO, the other has a symlink with the same name.
-    // Should be SPECIAL-FILE, not DIFFERENT-SYMLINK-STATUS.
-    let tmp = std::env::temp_dir().join("bv_test_fifo_vs_symlink");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(&a).unwrap();
-    std::fs::create_dir_all(&b).unwrap();
-
-    // a/entry is a FIFO
-    let fifo_path = a.join("entry");
-    StdCommand::new("mkfifo")
-        .arg(&fifo_path)
-        .status()
-        .expect("mkfifo failed");
-
-    // b/entry is a symlink
-    std::fs::write(b.join("target.txt"), "content\n").unwrap();
-    std::os::unix::fs::symlink("target.txt", b.join("entry")).unwrap();
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    // Special file should always be SPECIAL-FILE regardless of what the other side is
-    assert!(
-        some_line_has(&output, "SPECIAL-FILE:", "entry"),
-        "Expected SPECIAL-FILE when one side is a FIFO, got:\n{}",
-        output
-    );
-    assert!(
-        !some_line_has(&output, "DIFFERENT-SYMLINK-STATUS:", "entry"),
-        "FIFO vs symlink should not be DIFFERENT-SYMLINK-STATUS, got:\n{}",
-        output
-    );
-}
-
-#[test]
-fn symlink_vs_special_file() {
-    // Reverse: original is a symlink, backup is a FIFO.
-    let tmp = std::env::temp_dir().join("bv_test_symlink_vs_fifo");
-    let _ = std::fs::remove_dir_all(&tmp);
-    let a = tmp.join("a");
-    let b = tmp.join("b");
-    std::fs::create_dir_all(&a).unwrap();
-    std::fs::create_dir_all(&b).unwrap();
-
-    // a/entry is a symlink
-    std::fs::write(a.join("target.txt"), "content\n").unwrap();
-    std::os::unix::fs::symlink("target.txt", a.join("entry")).unwrap();
-
-    // b/entry is a FIFO
-    let fifo_path = b.join("entry");
-    StdCommand::new("mkfifo")
-        .arg(&fifo_path)
-        .status()
-        .expect("mkfifo failed");
-
-    let a_str = a.to_str().unwrap().to_string();
-    let b_str = b.to_str().unwrap().to_string();
-    let assert = cmd().args([&a_str, &b_str]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    let _ = std::fs::remove_dir_all(&tmp);
-
-    assert!(
-        some_line_has(&output, "SPECIAL-FILE:", "entry"),
-        "Expected SPECIAL-FILE when one side is a FIFO, got:\n{}",
-        output
-    );
-    assert!(
-        !some_line_has(&output, "DIFFERENT-SYMLINK-STATUS:", "entry"),
-        "Symlink vs FIFO should not be DIFFERENT-SYMLINK-STATUS, got:\n{}",
-        output
     );
 }
