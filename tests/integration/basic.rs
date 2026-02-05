@@ -1,166 +1,292 @@
-use predicates::prelude::*;
+//! Basic integration tests using the case! macro infrastructure.
+//!
+//! These tests cover fundamental scenarios: identical files, missing files,
+//! extras, different sizes/content, and nested directories.
 
-use super::{cmd, no_line_has, some_line_has, stdout_of, testdata};
+use super::harness::Entry::*;
+use crate::case;
 
-#[test]
-fn identical() {
-    let (a, b) = testdata("identical");
-    cmd()
-        .args([&a, &b])
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("MISSING-FILE")
-                .not()
-                .and(predicate::str::contains("MISSING-DIR").not())
-                .and(predicate::str::contains("EXTRA-FILE").not())
-                .and(predicate::str::contains("EXTRA-DIR").not())
-                .and(predicate::str::contains("DIFFERENT-FILE").not())
-                .and(predicate::str::contains("ERROR").not())
-                .and(predicate::str::contains("Original items processed: 4"))
-                .and(predicate::str::contains("Backup items processed: 4"))
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 0 (0.00%)"))
-                .and(predicate::str::contains("Extras: 0"))
-                .and(predicate::str::contains("Similarities: 4"))
-                .and(predicate::str::contains("Skipped: 0"))
-                .and(predicate::str::contains("Errors: 0")),
-        );
-}
+// testdata/identical: hello.txt + sub/ + sub/nested.txt (identical both sides)
+// Items: root dir + hello.txt + sub/ + sub/nested.txt = 4
+case!(identical {
+    orig: [
+        File("hello.txt", "hello world\n"),
+        Dir("sub"),
+        File("sub/nested.txt", "nested file\n"),
+    ],
+    backup: [
+        File("hello.txt", "hello world\n"),
+        Dir("sub"),
+        File("sub/nested.txt", "nested file\n"),
+    ],
+    flags: [],
+    lines: [],
+    original_processed: 4,
+    backup_processed: 4,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 4,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn missing_file() {
-    let (a, b) = testdata("missing");
-    let assert = cmd().args([&a, &b, "-v", "-v"]).assert().code(1);
-    let output = stdout_of(&assert);
+// testdata/missing: orig has exists.txt + also_here.txt, backup only has exists.txt
+// Items: root dir + files = 3 orig, 2 backup
+case!(missing_file {
+    orig: [
+        File("exists.txt", "I exist\n"),
+        File("also_here.txt", "me too\n"),
+    ],
+    backup: [
+        File("exists.txt", "I exist\n"),
+    ],
+    flags: [],
+    lines: [
+        "MISSING-FILE: a/also_here.txt",
+    ],
+    original_processed: 3,
+    backup_processed: 2,
+    missing: 1,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
 
-    // Per-line: also_here.txt IS on a MISSING-FILE: line
-    assert!(
-        some_line_has(&output, "MISSING-FILE:", "also_here.txt"),
-        "Expected MISSING-FILE for also_here.txt"
-    );
-    // Per-line: exists.txt is NOT on any MISSING-FILE: line
-    assert!(
-        no_line_has(&output, "MISSING-FILE:", "exists.txt"),
-        "exists.txt must not appear on a MISSING-FILE: line"
-    );
+// testdata/extras: orig has base.txt, backup has base.txt + extra.txt + extra_dir/
+// extra_dir/ contains file.txt
+// Items: orig = root + base.txt = 2
+//        backup = root + base.txt + extra.txt + extra_dir + extra_dir/file.txt = 5
+case!(extras {
+    orig: [
+        File("base.txt", "base content\n"),
+    ],
+    backup: [
+        File("base.txt", "base content\n"),
+        File("extra.txt", "I'm extra\n"),
+        Dir("extra_dir"),
+        File("extra_dir/file.txt", "extra dir file\n"),
+    ],
+    flags: [],
+    lines: [
+        "EXTRA-FILE: b/extra.txt",
+        "EXTRA-DIR: b/extra_dir",
+    ],
+    original_processed: 2,
+    backup_processed: 5,
+    missing: 0,
+    different: 0,
+    extras: 3,
+    special_files: 0,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
 
-    assert!(output.contains("Original items processed: 3"));
-    assert!(output.contains("Backup items processed: 2"));
-    assert!(output.contains("Missing: 1 (33.33%)"));
-    assert!(output.contains("Different: 0 (0.00%)"));
-    assert!(output.contains("Extras: 0"));
-    assert!(output.contains("Similarities: 2"));
-}
+// testdata/different_size: same filename, different content lengths
+// "short" (5 bytes) vs "this is a longer string" (23 bytes)
+case!(different_size {
+    orig: [
+        File("file.txt", "short"),
+    ],
+    backup: [
+        File("file.txt", "this is a longer string"),
+    ],
+    flags: [],
+    lines: [
+        "DIFFERENT-FILE [SIZE]: a/file.txt",
+    ],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 1,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn extras() {
-    let (a, b) = testdata("extras");
-    cmd()
-        .args([&a, &b])
-        .assert()
-        .code(1)
-        .stdout(
-            predicate::str::contains("EXTRA-FILE:")
-                .and(predicate::str::contains("extra.txt"))
-                .and(predicate::str::contains("EXTRA-DIR:"))
-                .and(predicate::str::contains("extra_dir"))
-                .and(predicate::str::contains("MISSING-FILE").not())
-                .and(predicate::str::contains("DIFFERENT-FILE").not())
-                .and(predicate::str::contains("Original items processed: 2"))
-                .and(predicate::str::contains("Backup items processed: 5"))
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 0 (0.00%)"))
-                .and(predicate::str::contains("Extras: 3"))
-                .and(predicate::str::contains("Similarities: 2")),
-        );
-}
+// testdata/different_content: same size (4 bytes), different content
+// "aaaa" vs "bbbb" - without --all or -s, no difference detected (size-only check)
+case!(different_content_no_check {
+    orig: [
+        File("file.txt", "aaaa"),
+    ],
+    backup: [
+        File("file.txt", "bbbb"),
+    ],
+    flags: [],
+    lines: [],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 2,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn different_size() {
-    let (a, b) = testdata("different_size");
-    cmd()
-        .args([&a, &b])
-        .assert()
-        .code(1)
-        .stdout(
-            predicate::str::contains("DIFFERENT-FILE [SIZE]:")
-                .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Original items processed: 2"))
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 1 (50.00%)"))
-                .and(predicate::str::contains("Similarities: 1")),
-        );
-}
+// With --all flag, hash comparison detects the difference
+case!(different_content_hash {
+    orig: [
+        File("file.txt", "aaaa"),
+    ],
+    backup: [
+        File("file.txt", "bbbb"),
+    ],
+    flags: ["--all"],
+    lines: [
+        "DIFFERENT-FILE [HASH]: a/file.txt",
+    ],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 1,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn different_content_no_check() {
-    let (a, b) = testdata("different_content");
-    cmd()
-        .args([&a, &b])
-        .assert()
-        .success()
-        .stdout(
-            predicate::str::contains("DIFFERENT-FILE")
-                .not()
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 0 (0.00%)"))
-                .and(predicate::str::contains("Similarities: 2")),
-        );
-}
+// With -s (sample) flag, sampling comparison detects the difference
+case!(different_content_sample {
+    orig: [
+        File("file.txt", "aaaa"),
+    ],
+    backup: [
+        File("file.txt", "bbbb"),
+    ],
+    flags: ["-s", "10"],
+    lines: [
+        "DIFFERENT-FILE [SAMPLE]: a/file.txt",
+    ],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 1,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn different_content_hash() {
-    let (a, b) = testdata("different_content");
-    cmd()
-        .args([&a, &b, "--all"])
-        .assert()
-        .code(1)
-        .stdout(
-            predicate::str::contains("DIFFERENT-FILE [HASH]:")
-                .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 1 (50.00%)"))
-                .and(predicate::str::contains("Similarities: 1")),
-        );
-}
+// With --all on different sizes, SIZE is reported (not HASH)
+case!(different_size_and_hash {
+    orig: [
+        File("file.txt", "short"),
+    ],
+    backup: [
+        File("file.txt", "this is a longer string"),
+    ],
+    flags: ["--all"],
+    lines: [
+        "DIFFERENT-FILE [SIZE]: a/file.txt",
+    ],
+    original_processed: 2,
+    backup_processed: 2,
+    missing: 0,
+    different: 1,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn different_content_sample() {
-    let (a, b) = testdata("different_content");
-    cmd()
-        .args([&a, &b, "-s", "10"])
-        .assert()
-        .code(1)
-        .stdout(
-            predicate::str::contains("DIFFERENT-FILE [SAMPLE]:")
-                .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 1 (50.00%)"))
-                .and(predicate::str::contains("Similarities: 1")),
-        );
-}
+// testdata/nested structure:
+// orig: sub1/ok.txt, sub1/missing.txt, sub3/deep/file.txt
+// backup: sub1/ok.txt, sub2/extra.txt
+//
+// Items in orig: root + sub1 + sub1/ok.txt + sub1/missing.txt + sub3 + sub3/deep + sub3/deep/file.txt = 7
+// Items in backup: root + sub1 + sub1/ok.txt + sub2 + sub2/extra.txt = 5
+//
+// Missing: sub1/missing.txt (1) + sub3 (dir with deep/file.txt counted = 3) = 4 missing
+// Extras: sub2 (dir + extra.txt inside = 2) = 2 extras
+// Similarities: root + sub1 + sub1/ok.txt = 3
+case!(nested {
+    orig: [
+        Dir("sub1"),
+        File("sub1/ok.txt", "ok\n"),
+        File("sub1/missing.txt", "missing\n"),
+        Dir("sub3"),
+        Dir("sub3/deep"),
+        File("sub3/deep/file.txt", "deep\n"),
+    ],
+    backup: [
+        Dir("sub1"),
+        File("sub1/ok.txt", "ok\n"),
+        Dir("sub2"),
+        File("sub2/extra.txt", "extra\n"),
+    ],
+    flags: [],
+    lines: [
+        "MISSING-FILE: a/sub1/missing.txt",
+        "MISSING-DIR: a/sub3",
+        "EXTRA-DIR: b/sub2",
+    ],
+    original_processed: 7,
+    backup_processed: 5,
+    missing: 4,
+    different: 0,
+    extras: 2,
+    special_files: 0,
+    similarities: 3,
+    skipped: 0,
+    errors: 0,
+});
 
-#[test]
-fn different_size_and_hash() {
-    let (a, b) = testdata("different_size");
-    cmd()
-        .args([&a, &b, "--all"])
-        .assert()
-        .code(1)
-        .stdout(
-            predicate::str::contains("DIFFERENT-FILE [SIZE]:")
-                .and(predicate::str::contains("file.txt"))
-                .and(predicate::str::contains("Missing: 0 (0.00%)"))
-                .and(predicate::str::contains("Different: 1 (50.00%)")),
-        );
-}
+// At -vv, contents inside missing/extra dirs ARE listed
+case!(nested_vv {
+    orig: [
+        Dir("sub1"),
+        File("sub1/ok.txt", "ok\n"),
+        File("sub1/missing.txt", "missing\n"),
+        Dir("sub3"),
+        Dir("sub3/deep"),
+        File("sub3/deep/file.txt", "deep\n"),
+    ],
+    backup: [
+        Dir("sub1"),
+        File("sub1/ok.txt", "ok\n"),
+        Dir("sub2"),
+        File("sub2/extra.txt", "extra\n"),
+    ],
+    flags: ["-vv"],
+    lines: [
+        "MISSING-FILE: a/sub1/missing.txt",
+        "MISSING-DIR: a/sub3",
+        "MISSING-DIR: a/sub3/deep",
+        "MISSING-FILE: a/sub3/deep/file.txt",
+        "EXTRA-DIR: b/sub2",
+        "EXTRA-FILE: b/sub2/extra.txt",
+    ],
+    original_processed: 7,
+    backup_processed: 5,
+    missing: 4,
+    different: 0,
+    extras: 2,
+    special_files: 0,
+    similarities: 3,
+    skipped: 0,
+    errors: 0,
+});
 
+// Special test: 1 MB files identical except for one byte near the end.
+// Sampling is overwhelmingly likely to miss the difference, but --all catches it via BLAKE3.
+// This test cannot use case! because it needs custom file generation (not static content).
 #[test]
 fn hash_catches_single_byte_difference() {
-    // 1 MB files identical except for one byte near the end.
-    // -s 1 is overwhelmingly likely to miss the difference (samples 32 bytes
-    // out of 1 MB), but --all must catch it via BLAKE3.
+    use super::{cmd, no_line_has, some_line_has, stdout_of};
+
     let tmp = std::env::temp_dir().join("bv_test_hash_1mb");
     let _ = std::fs::remove_dir_all(&tmp);
     let a = tmp.join("a");
@@ -197,51 +323,4 @@ fn hash_catches_single_byte_difference() {
         "Files are same size, should not report SIZE, got:\n{}",
         output
     );
-}
-
-#[test]
-fn nested() {
-    let (a, b) = testdata("nested");
-    let assert = cmd().args([&a, &b]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    assert!(some_line_has(&output, "MISSING-DIR:", "sub3"));
-    assert!(some_line_has(&output, "MISSING-FILE:", "missing.txt"));
-    assert!(some_line_has(&output, "EXTRA-DIR:", "sub2"));
-
-    // At default verbosity, contents inside missing/extra dirs are NOT listed
-    assert!(!some_line_has(&output, "MISSING-FILE:", "deep/file.txt"));
-    assert!(!some_line_has(&output, "EXTRA-FILE:", "sub2"));
-
-    assert!(output.contains("Original items processed: 7"));
-    assert!(output.contains("Backup items processed: 5"));
-    assert!(output.contains("Missing: 4 (57.14%)"));
-    assert!(output.contains("Different: 0 (0.00%)"));
-    assert!(output.contains("Extras: 2"));
-    assert!(output.contains("Similarities: 3"));
-}
-
-#[test]
-fn nested_vv() {
-    let (a, b) = testdata("nested");
-    let assert = cmd().args([&a, &b, "-v", "-v"]).assert().code(1);
-    let output = stdout_of(&assert);
-
-    // At -vv, contents of missing/extra dirs ARE listed
-    assert!(output
-        .lines()
-        .any(|l| l.contains("MISSING-DIR:") && l.contains("deep")));
-    assert!(output
-        .lines()
-        .any(|l| l.contains("MISSING-FILE:") && l.contains("deep") && l.contains("file.txt")));
-    assert!(output
-        .lines()
-        .any(|l| l.contains("EXTRA-FILE:") && l.contains("sub2") && l.contains("extra.txt")));
-
-    // Summary counts unchanged by verbosity
-    assert!(output.contains("Original items processed: 7"));
-    assert!(output.contains("Missing: 4 (57.14%)"));
-    assert!(output.contains("Different: 0 (0.00%)"));
-    assert!(output.contains("Extras: 2"));
-    assert!(output.contains("Similarities: 3"));
 }

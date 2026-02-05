@@ -2,6 +2,7 @@ mod basic;
 mod edge_cases;
 mod errors;
 mod flags;
+mod harness;
 mod matrix;
 mod symlinks;
 
