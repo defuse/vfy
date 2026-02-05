@@ -231,7 +231,7 @@
 
 #### Sampling (-s) Edge Cases
 - [ ] -s 0 behavior
-- [ ] -s larger than file size
+- [ ] -s larger than file size (this seems useless, it will just sample that many times)
 - [ ] -s on empty files
 - [ ] -s detecting difference at exact sample boundary
 

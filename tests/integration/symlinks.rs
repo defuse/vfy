@@ -460,16 +460,17 @@ case!(dangling_orig_resolving_backup_file_with_follow {
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/link",
         "DANGLING-SYMLINK: a/link",
-        "EXTRA-FILE: b/link",
+        "EXTRA-SYMLINK: b/link",
         "EXTRA-FILE: b/target.txt",
     ],
     // orig: root + link + (dangling resolution attempt) = 3
-    // backup: root + target.txt + link + link resolved = 4
+    // backup: root + target.txt + link + link-symlink + link-resolved = 5
     original_processed: 3,
-    backup_processed: 4,
+    backup_processed: 5,
     missing: 0,
     different: 1,
-    extras: 2,
+    // EXTRA-SYMLINK (link) + EXTRA-FILE (link resolved, silent) + EXTRA-FILE (target.txt) = 3
+    extras: 3,
     special_files: 0,
     similarities: 1,
     skipped: 0,
@@ -492,14 +493,16 @@ case!(dangling_backup_resolving_orig_dir_with_follow {
         "DANGLING-SYMLINK: b/link",
         "MISSING-DIR: a/real_dir",
         "MISSING-FILE: a/real_dir/child.txt",
+        "MISSING-SYMLINK: a/link",
         "MISSING-DIR: a/link",
         "MISSING-FILE: a/link/child.txt",
     ],
-    // orig: root + real_dir + real_dir/child.txt + link + link resolved (as dir) + link/child.txt = 6
+    // orig: root + real_dir + real_dir/child.txt + link + link-symlink + link-resolved (as dir) + link/child.txt = 7
     // backup: root + link + (dangling resolution attempt) = 3
-    original_processed: 6,
+    original_processed: 7,
     backup_processed: 3,
-    missing: 4,
+    // MISSING-SYMLINK (link) + MISSING-DIR (link resolved) + MISSING-FILE (link/child.txt) + MISSING-DIR (real_dir) + MISSING-FILE (real_dir/child.txt) = 5
+    missing: 5,
     different: 1,
     extras: 0,
     special_files: 0,
@@ -584,18 +587,20 @@ case!(symlinks_one_resolves_to_dir_other_to_file {
     lines: [
         "DIFFERENT-SYMLINK-TARGET: a/entry",
         "FILE-DIR-MISMATCH: a/entry",
-        "MISSING-DIR: a/entry",
-        "EXTRA-FILE: b/entry",
+        "MISSING-SYMLINK: a/entry",
+        "EXTRA-SYMLINK: b/entry",
         "MISSING-DIR: a/target_dir",
         "EXTRA-FILE: b/target_file.txt",
     ],
-    // orig: root + target_dir + entry (resolved as dir) = 4
-    // backup: root + target_file.txt + entry (resolved as file) = 4
-    original_processed: 4,
-    backup_processed: 4,
-    missing: 2,
+    // orig: root + target_dir + entry + entry-symlink + entry-resolved (as dir) = 5
+    // backup: root + target_file.txt + entry + entry-symlink + entry-resolved (as file) = 5
+    original_processed: 5,
+    backup_processed: 5,
+    // MISSING-SYMLINK (entry) + MISSING-DIR (entry resolved, silent) + MISSING-DIR (target_dir) = 3
+    missing: 3,
     different: 2,
-    extras: 2,
+    // EXTRA-SYMLINK (entry) + EXTRA-FILE (entry resolved, silent) + EXTRA-FILE (target_file.txt) = 3
+    extras: 3,
     special_files: 0,
     similarities: 1,
     skipped: 0,
@@ -648,21 +653,25 @@ case!(symlink_same_target_orig_dir_backup_file_follow {
     flags: ["--follow", "-vv"],
     lines: [
         "FILE-DIR-MISMATCH: a/link",
+        "MISSING-SYMLINK: a/link",
         "MISSING-DIR: a/link",
         "MISSING-FILE: a/link/inside.txt",
+        "EXTRA-SYMLINK: b/link",
         "EXTRA-FILE: b/link",
         "FILE-DIR-MISMATCH: a/target",
         "MISSING-DIR: a/target",
         "MISSING-FILE: a/target/inside.txt",
         "EXTRA-FILE: b/target",
     ],
-    // orig: root + target + target/inside.txt + link + link resolved (as dir) + link/inside.txt = 6
-    // backup: root + target + link + link resolved (as file) = 4
-    original_processed: 6,
-    backup_processed: 4,
-    missing: 4,
+    // orig: root + target + target/inside.txt + link + link-symlink + link-resolved (as dir) + link/inside.txt = 7
+    // backup: root + target + link + link-symlink + link-resolved (as file) = 5
+    original_processed: 7,
+    backup_processed: 5,
+    // MISSING-SYMLINK (link) + MISSING-DIR (link resolved) + MISSING-FILE (link/inside.txt) + MISSING-DIR (target) + MISSING-FILE (target/inside.txt) = 5
+    missing: 5,
     different: 2,
-    extras: 2,
+    // EXTRA-SYMLINK (link) + EXTRA-FILE (link resolved) + EXTRA-FILE (target) = 3
+    extras: 3,
     special_files: 0,
     similarities: 2,
     skipped: 0,
@@ -683,7 +692,9 @@ case!(symlink_same_target_orig_file_backup_dir_follow {
     flags: ["--follow", "-vv"],
     lines: [
         "FILE-DIR-MISMATCH: a/link",
+        "MISSING-SYMLINK: a/link",
         "MISSING-FILE: a/link",
+        "EXTRA-SYMLINK: b/link",
         "EXTRA-DIR: b/link",
         "EXTRA-FILE: b/link/inside.txt",
         "FILE-DIR-MISMATCH: a/target",
@@ -691,13 +702,15 @@ case!(symlink_same_target_orig_file_backup_dir_follow {
         "EXTRA-DIR: b/target",
         "EXTRA-FILE: b/target/inside.txt",
     ],
-    // orig: root + target + link + link resolved (as file) = 4
-    // backup: root + target + target/inside.txt + link + link resolved (as dir) + link/inside.txt = 6
-    original_processed: 4,
-    backup_processed: 6,
-    missing: 2,
+    // orig: root + target + link + link-symlink + link-resolved (as file) = 5
+    // backup: root + target + target/inside.txt + link + link-symlink + link-resolved (as dir) + link/inside.txt = 7
+    original_processed: 5,
+    backup_processed: 7,
+    // MISSING-SYMLINK (link) + MISSING-FILE (link resolved) + MISSING-FILE (target) = 3
+    missing: 3,
     different: 2,
-    extras: 4,
+    // EXTRA-SYMLINK (link) + EXTRA-DIR (link resolved) + EXTRA-FILE (link/inside.txt) + EXTRA-DIR (target) + EXTRA-FILE (target/inside.txt) = 5
+    extras: 5,
     special_files: 0,
     similarities: 2,
     skipped: 0,

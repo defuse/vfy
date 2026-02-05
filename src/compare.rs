@@ -274,14 +274,15 @@ fn compare(
     }
 
     if meta_orig.is_file_dir_or_symlink() {
-        report(orig, Direction::Missing, follow, true, config, stats);
+        // We pass false so that we get a MISSING-SYMLINK *and* MISSING-FILE for resolving symlinks.
+        report(orig, Direction::Missing, false, true, config, stats);
     }
     if meta_back.is_file_dir_or_symlink() {
         // Only skip reporting backup as Extra if orig had an Error (permission denied).
         // For Special files or Dangling symlinks, still report backup as extra.
         // Error means we can't verify - don't suggest deletion of potentially valid backup.
         if !matches!(meta_orig, Meta::Error(_)) {
-            report(backup, Direction::Extra, follow, true, config, stats);
+            report(backup, Direction::Extra, false, true, config, stats);
         }
     }
 }

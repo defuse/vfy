@@ -51,7 +51,7 @@ pub struct Cli {
     #[arg(short, long)]
     pub all: bool,
 
-    /// Follow symlinks into directories
+    /// Compare symlinked-to contents (symlink target paths are always compared, even without --follow)
     #[arg(short, long)]
     pub follow: bool,
 
