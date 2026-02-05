@@ -23,7 +23,7 @@ enum Meta {
     Symlink,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy)]
 enum Direction {
     Missing,
     Extra,
@@ -265,7 +265,12 @@ fn compare(
         report(orig, Direction::Missing, follow, true, config, stats);
     }
     if meta_back.is_file_dir_or_symlink() {
-        report(backup, Direction::Extra, follow, true, config, stats);
+        // Only skip reporting backup as Extra if orig had an Error (permission denied).
+        // For Special files or Dangling symlinks, still report backup as extra.
+        // Error means we can't verify - don't suggest deletion of potentially valid backup.
+        if !matches!(meta_orig, Meta::Error(_)) {
+            report(backup, Direction::Extra, follow, true, config, stats);
+        }
     }
 }
 
@@ -283,9 +288,6 @@ fn compare_files(
     config: &Config,
     stats: &Stats,
 ) {
-    stats.inc_original_items();
-    stats.inc_backup_items();
-
     if config.verbosity >= Verbosity::Files {
         println!(
             "DEBUG: Comparing file [{}] to [{}]",
@@ -296,13 +298,32 @@ fn compare_files(
 
     match compare_file_content(orig, backup, orig_meta, backup_meta, config, stats) {
         FileCompareResult::Different(r) => {
+            stats.inc_original_items();
+            stats.inc_backup_items();
             println!("DIFFERENT-FILE [{}]: [{}]", r, orig.display());
             stats.inc_different();
         }
         FileCompareResult::Same => {
+            stats.inc_original_items();
+            stats.inc_backup_items();
             stats.inc_similarities();
         }
-        FileCompareResult::ErrorAlreadyReported => {}
+        FileCompareResult::OrigError => {
+            // Can't read original - but don't report backup as "extra"
+            // because it might be a valid backup. Safe/conservative behavior.
+            stats.inc_original_items();
+            stats.inc_backup_items();
+        }
+        FileCompareResult::BackupError => {
+            // Can't read backup → original is effectively missing
+            stats.inc_backup_items();
+            report(orig, Direction::Missing, false, true, config, stats);
+        }
+        FileCompareResult::BothError => {
+            // Both failed, errors already reported
+            stats.inc_original_items();
+            stats.inc_backup_items();
+        }
     }
 }
 
@@ -404,14 +425,16 @@ fn compare_symlinks(
     let orig_target = match fs::read_link(orig) {
         Ok(t) => t,
         Err(e) => {
+            // Can't read original symlink - but don't report backup as "extra"
+            // because it might be a valid backup. Safe/conservative behavior.
             stats.inc_original_items();
+            stats.inc_backup_items();
             println!(
                 "ERROR: Cannot read symlink target for [{}]: {}",
                 orig.display(),
                 e
             );
             stats.inc_errors();
-            report(backup, Direction::Extra, false, true, config, stats);
             return;
         }
     };
@@ -539,9 +562,15 @@ fn report(
 enum FileCompareResult {
     Same,
     Different(DiffReasons),
-    /// An I/O error occurred; `compare_file_content` already called `inc_errors`
-    /// for each failing side.
-    ErrorAlreadyReported,
+    /// Original file failed to read; error already reported via `inc_errors`.
+    /// Caller should count backup as extra.
+    OrigError,
+    /// Backup file failed to read; error already reported via `inc_errors`.
+    /// Caller should count original as missing.
+    BackupError,
+    /// Both files failed to read; errors already reported via `inc_errors`.
+    /// Nothing more to count.
+    BothError,
 }
 
 /// Compare two files by content. Reports errors for each side independently.
@@ -594,7 +623,7 @@ fn compare_file_content(
                 (Err(e), Ok(_)) => {
                     println!("ERROR: Cannot read sample from [{}]: {}", orig.display(), e);
                     stats.inc_errors();
-                    return FileCompareResult::ErrorAlreadyReported;
+                    return FileCompareResult::OrigError;
                 }
                 (Ok(_), Err(e)) => {
                     println!(
@@ -603,7 +632,7 @@ fn compare_file_content(
                         e
                     );
                     stats.inc_errors();
-                    return FileCompareResult::ErrorAlreadyReported;
+                    return FileCompareResult::BackupError;
                 }
                 (Err(e1), Err(e2)) => {
                     println!("ERROR: Cannot read sample from [{}]: {}", orig.display(), e1);
@@ -614,7 +643,7 @@ fn compare_file_content(
                         e2
                     );
                     stats.inc_errors();
-                    return FileCompareResult::ErrorAlreadyReported;
+                    return FileCompareResult::BothError;
                 }
             }
         }
@@ -642,12 +671,12 @@ fn compare_file_content(
             }
         };
 
-        if orig_hash.is_none() || backup_hash.is_none() {
-            return FileCompareResult::ErrorAlreadyReported;
-        }
-
-        let orig_hash = orig_hash.unwrap();
-        let backup_hash = backup_hash.unwrap();
+        let (orig_hash, backup_hash) = match (orig_hash, backup_hash) {
+            (None, None) => return FileCompareResult::BothError,
+            (None, Some(_)) => return FileCompareResult::OrigError,
+            (Some(_), None) => return FileCompareResult::BackupError,
+            (Some(o), Some(b)) => (o, b),
+        };
 
         if config.verbosity >= Verbosity::Files {
             println!("DEBUG: BLAKE3 {} [{}]", orig_hash.to_hex(), orig.display());

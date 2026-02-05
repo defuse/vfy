@@ -116,7 +116,59 @@ pub struct OutputChecks<'a> {
 /// ```
 #[macro_export]
 macro_rules! case {
-    // Full form with debug_contains, debug_excludes, output_contains, output_excludes
+    // Full form with debug_contains, debug_excludes, output_contains, output_excludes, and symmetric
+    ($name:ident {
+        orig: [ $($orig:expr),* $(,)? ],
+        backup: [ $($backup:expr),* $(,)? ],
+        flags: [ $($flag:expr),* $(,)? ],
+        lines: [ $($line:expr),* $(,)? ],
+        debug_contains: [ $($dc:expr),* $(,)? ],
+        debug_excludes: [ $($de:expr),* $(,)? ],
+        output_contains: [ $($oc:expr),* $(,)? ],
+        output_excludes: [ $($oe:expr),* $(,)? ],
+        original_processed: $op:expr,
+        backup_processed: $bp:expr,
+        missing: $mis:expr,
+        different: $diff:expr,
+        extras: $ext:expr,
+        special_files: $nfd:expr,
+        similarities: $sim:expr,
+        skipped: $skip:expr,
+        errors: $err:expr,
+        symmetric: $sym:expr $(,)?
+    }) => {
+        #[test]
+        fn $name() {
+            $crate::harness::check_full(
+                stringify!($name),
+                &[$($orig),*],
+                &[$($backup),*],
+                &[$($flag),*],
+                &[$($line),*],
+                $crate::harness::DebugChecks {
+                    contains: &[$($dc),*],
+                    excludes: &[$($de),*],
+                },
+                $crate::harness::OutputChecks {
+                    contains: &[$($oc),*],
+                    excludes: &[$($oe),*],
+                },
+                $crate::harness::Counts {
+                    original_processed: $op,
+                    backup_processed: $bp,
+                    missing: $mis,
+                    different: $diff,
+                    extras: $ext,
+                    special_files: $nfd,
+                    similarities: $sim,
+                    skipped: $skip,
+                    errors: $err,
+                },
+                $sym,
+            );
+        }
+    };
+    // Full form with debug_contains, debug_excludes, output_contains, output_excludes (symmetric default true)
     ($name:ident {
         orig: [ $($orig:expr),* $(,)? ],
         backup: [ $($backup:expr),* $(,)? ],
@@ -163,6 +215,7 @@ macro_rules! case {
                     skipped: $skip,
                     errors: $err,
                 },
+                true,
             );
         }
     };
@@ -207,6 +260,7 @@ macro_rules! case {
                     skipped: $skip,
                     errors: $err,
                 },
+                true,
             );
         }
     };
@@ -245,6 +299,7 @@ macro_rules! case {
                     skipped: $skip,
                     errors: $err,
                 },
+                true,
             );
         }
     };
@@ -592,8 +647,9 @@ pub fn check(
     flags: &[&str],
     expected_lines: &[&str],
     counts: Counts,
+    symmetric: bool,
 ) {
-    check_internal(name, orig_entries, backup_entries, flags, expected_lines, None, None, counts);
+    check_internal(name, orig_entries, backup_entries, flags, expected_lines, None, None, counts, symmetric);
 }
 
 /// Entry point for case! macro with DEBUG checking: runs forward and reversed tests.
@@ -605,6 +661,7 @@ pub fn check_with_debug(
     expected_lines: &[&str],
     debug_checks: DebugChecks,
     counts: Counts,
+    symmetric: bool,
 ) {
     check_internal(
         name,
@@ -615,6 +672,7 @@ pub fn check_with_debug(
         Some(debug_checks),
         None,
         counts,
+        symmetric,
     );
 }
 
@@ -628,6 +686,7 @@ pub fn check_full(
     debug_checks: DebugChecks,
     output_checks: OutputChecks,
     counts: Counts,
+    symmetric: bool,
 ) {
     check_internal(
         name,
@@ -638,6 +697,7 @@ pub fn check_full(
         Some(debug_checks),
         Some(output_checks),
         counts,
+        symmetric,
     );
 }
 
@@ -671,6 +731,7 @@ fn check_internal(
     debug_checks: Option<DebugChecks>,
     output_checks: Option<OutputChecks>,
     counts: Counts,
+    symmetric: bool,
 ) {
     let tmp = std::env::temp_dir().join(format!("bv_harness_{}", name));
     let _ = std::fs::remove_dir_all(&tmp);
@@ -691,37 +752,39 @@ fn check_internal(
 
     // Reversed direction: swap orig↔backup, swap missing↔extras,
     // swap original_processed↔backup_processed, transform MISSING↔EXTRA in lines
-    let reversed_lines: Vec<String> = expected_lines
-        .iter()
-        .map(|l| reverse_expected_line(l))
-        .collect();
-    let reversed_line_refs: Vec<&str> = reversed_lines.iter().map(|s| s.as_str()).collect();
+    if symmetric {
+        let reversed_lines: Vec<String> = expected_lines
+            .iter()
+            .map(|l| reverse_expected_line(l))
+            .collect();
+        let reversed_line_refs: Vec<&str> = reversed_lines.iter().map(|s| s.as_str()).collect();
 
-    let reversed_counts = Counts {
-        original_processed: counts.backup_processed,
-        backup_processed: counts.original_processed,
-        missing: counts.extras,
-        different: counts.different,
-        extras: counts.missing,
-        special_files: counts.special_files,
-        similarities: counts.similarities,
-        skipped: counts.skipped,
-        errors: counts.errors,
-    };
+        let reversed_counts = Counts {
+            original_processed: counts.backup_processed,
+            backup_processed: counts.original_processed,
+            missing: counts.extras,
+            different: counts.different,
+            extras: counts.missing,
+            special_files: counts.special_files,
+            similarities: counts.similarities,
+            skipped: counts.skipped,
+            errors: counts.errors,
+        };
 
-    // Note: DEBUG and output checks are only done on forward direction, since the
-    // patterns typically reference a/ and b/ paths which swap in reversed mode
-    run_and_check_full(
-        &format!("{} (reversed)", name),
-        &tmp,
-        backup_entries,
-        orig_entries,
-        flags,
-        &reversed_line_refs,
-        None, // Skip debug checks for reversed
-        None, // Skip output checks for reversed
-        &reversed_counts,
-    );
+        // Note: DEBUG and output checks are only done on forward direction, since the
+        // patterns typically reference a/ and b/ paths which swap in reversed mode
+        run_and_check_full(
+            &format!("{} (reversed)", name),
+            &tmp,
+            backup_entries,
+            orig_entries,
+            flags,
+            &reversed_line_refs,
+            None, // Skip debug checks for reversed
+            None, // Skip output checks for reversed
+            &reversed_counts,
+        );
+    }
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
