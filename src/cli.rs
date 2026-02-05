@@ -7,6 +7,15 @@ use std::path::{Component, PathBuf};
     about = "Verify backup integrity by comparing directory trees",
     arg_required_else_help = true,
     after_help = "\
+WARNING: Output behavior is currently NOT STABLE between releases.
+
+Verbosity levels:
+  (default)  Show differences only. For missing/extra directories, only the
+             top-level directory is listed; children are counted but not shown.
+  -v         Add DEBUG lines showing each directory comparison.
+  -vv        Add DEBUG lines for file comparisons. Show all individual entries
+             inside missing/extra directories. With --all, show BLAKE3 hashes.
+
 Output prefixes (grep-friendly):
   MISSING-FILE:                  File in original missing from backup
   MISSING-DIR:                   Directory in original missing from backup
@@ -29,7 +38,7 @@ Output prefixes (grep-friendly):
   SKIP:                          Entry skipped via --ignore
   ERROR:                         I/O or permission error
   DEBUG:                         Verbose logging (-v dirs, -vv files and hashes)
-  SUMMARY:                       Final counts"
+  SUMMARY:                       Final counts (not guaranteed to add up to 100%)"
 )]
 
 pub struct Cli {
@@ -39,7 +48,7 @@ pub struct Cli {
     /// Backup directory
     pub backup: PathBuf,
 
-    /// Verbose output (-v for dirs, -vv for files)
+    /// Verbose output (-v for dirs, -vv for files, hashes with --all, see below)
     #[arg(short, long, action = clap::ArgAction::Count)]
     pub verbose: u8,
 

@@ -22,13 +22,22 @@ Arguments:
   <BACKUP>    Backup directory
 
 Options:
-  -v, --verbose...         Verbose output (-v for dirs, -vv for files)
+  -v, --verbose...         Verbose output (-v for dirs, -vv for files, hashes with --all, see below)
   -s, --samples <SAMPLES>  Number of random samples to compare per file [default: 0]
   -a, --all                Full BLAKE3 hash comparison
   -f, --follow             Compare symlinked-to contents (symlink target paths are always compared, even without --follow)
   -o, --one-filesystem     Stay on one filesystem
   -i, --ignore <IGNORE>    Directories to ignore (can be specified multiple times)
   -h, --help               Print help
+
+WARNING: Output behavior is currently NOT STABLE between releases.
+
+Verbosity levels:
+  (default)  Show differences only. For missing/extra directories, only the
+             top-level directory is listed; children are counted but not shown.
+  -v         Add DEBUG lines showing each directory comparison.
+  -vv        Add DEBUG lines for file comparisons. Show all individual entries
+             inside missing/extra directories. With --all, show BLAKE3 hashes.
 
 Output prefixes (grep-friendly):
   MISSING-FILE:                  File in original missing from backup
@@ -52,7 +61,5 @@ Output prefixes (grep-friendly):
   SKIP:                          Entry skipped via --ignore
   ERROR:                         I/O or permission error
   DEBUG:                         Verbose logging (-v dirs, -vv files and hashes)
-  SUMMARY:                       Final counts
+  SUMMARY:                       Final counts (not guaranteed to add up to 100%)
 ```
-
-**AI Use Disclosure:** This tool was developed with the aid of claude code.
