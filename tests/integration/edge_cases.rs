@@ -3,10 +3,28 @@
 //! Tests cover: empty directories, zero-byte files, extras with no originals,
 //! mixed results, deep trees, and special files (FIFOs, device symlinks).
 
-use super::harness::Entry::*;
-use super::{cmd, stdout_of, testdata};
+use super::harness::{setup_legacy_test_dirs, Entry, Entry::*};
+use super::{cmd, stdout_of};
 use crate::case;
 use predicates::prelude::*;
+
+// ===========================================================================
+// Entry arrays for testdata scenarios used by manual tests
+// ===========================================================================
+
+const IDENTICAL: &[Entry] = &[
+    File("hello.txt", "hello world\n"),
+    Dir("sub"),
+    File("sub/nested.txt", "nested file\n"),
+];
+
+const SORTED_ORIG: &[Entry] = &[
+    File("alpha.txt", "a\n"),
+    File("bravo.txt", "b\n"),
+    File("charlie.txt", "c\n"),
+];
+
+const SORTED_BACKUP: &[Entry] = &[File("charlie.txt", "c\n")];
 
 // ===========================================================================
 // Empty directories
@@ -450,7 +468,7 @@ fn symlink_to_dev_dir_with_follow() {
 
 #[test]
 fn same_directory_warning() {
-    let (a, _) = testdata("identical");
+    let (_tmp, a, _b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     cmd()
         .args([&a, &a])
         .assert()
@@ -462,7 +480,7 @@ fn same_directory_warning() {
 fn output_is_sorted() {
     // sorted/ has alpha.txt, bravo.txt, charlie.txt in a/ but only charlie.txt in b/
     // MISSING-FILE lines should appear in alphabetical order
-    let (a, b) = testdata("sorted");
+    let (_tmp, a, b) = setup_legacy_test_dirs(SORTED_ORIG, SORTED_BACKUP);
     let assert = cmd().args([&a, &b]).assert().code(1);
     let output = stdout_of(&assert);
 

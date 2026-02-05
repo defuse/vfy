@@ -12,22 +12,6 @@ pub fn cmd() -> Command {
     Command::cargo_bin("vfy").unwrap()
 }
 
-pub fn testdata(scenario: &str) -> (String, String) {
-    let base = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("testdata")
-        .join(scenario);
-    (
-        base.join("a").to_str().unwrap().to_string(),
-        base.join("b").to_str().unwrap().to_string(),
-    )
-}
-
-pub fn testdata_base(scenario: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("testdata")
-        .join(scenario)
-}
-
 /// Check that at least one line contains both `prefix` and `needle`.
 pub fn some_line_has(output: &str, prefix: &str, needle: &str) -> bool {
     output
@@ -36,6 +20,7 @@ pub fn some_line_has(output: &str, prefix: &str, needle: &str) -> bool {
 }
 
 /// Check that no line matching `prefix` also contains `needle`.
+#[allow(dead_code)]
 pub fn no_line_has(output: &str, prefix: &str, needle: &str) -> bool {
     !some_line_has(output, prefix, needle)
 }

@@ -641,6 +641,27 @@ pub fn check_full(
     );
 }
 
+/// Create test directories from Entry arrays for legacy manual tests.
+/// Returns (TempDir, orig_path_string, backup_path_string).
+/// The TempDir must be kept alive for the duration of the test.
+pub fn setup_legacy_test_dirs(
+    orig_entries: &[Entry],
+    backup_entries: &[Entry],
+) -> (tempfile::TempDir, String, String) {
+    let tmp = tempfile::tempdir().expect("Failed to create temp dir");
+    let a = tmp.path().join("a");
+    let b = tmp.path().join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+    create_entries(&a, orig_entries);
+    create_entries(&b, backup_entries);
+    (
+        tmp,
+        a.to_str().unwrap().to_string(),
+        b.to_str().unwrap().to_string(),
+    )
+}
+
 fn check_internal(
     name: &str,
     orig_entries: &[Entry],

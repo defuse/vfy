@@ -1,5 +1,5 @@
-use super::harness::Entry::*;
-use super::{cmd, testdata};
+use super::harness::{setup_legacy_test_dirs, Entry::*};
+use super::cmd;
 use crate::case;
 use predicates::prelude::*;
 
@@ -231,7 +231,7 @@ fn original_is_file_not_dir() {
         .to_str()
         .unwrap()
         .to_string();
-    let (_, b) = testdata("identical");
+    let (_tmp, _a, b) = setup_legacy_test_dirs(&[], &[]);
 
     cmd()
         .args([&file_path, &b])
@@ -242,7 +242,7 @@ fn original_is_file_not_dir() {
 
 #[test]
 fn nonexistent_backup_exits_2() {
-    let (a, _) = testdata("identical");
+    let (_tmp, a, _b) = setup_legacy_test_dirs(&[], &[]);
     cmd()
         .args([&a, "/nonexistent/dir/backup"])
         .assert()
@@ -252,7 +252,7 @@ fn nonexistent_backup_exits_2() {
 
 #[test]
 fn backup_is_file_not_dir() {
-    let (a, _) = testdata("identical");
+    let (_tmp, a, _b) = setup_legacy_test_dirs(&[], &[]);
     let file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("Cargo.toml")
         .to_str()

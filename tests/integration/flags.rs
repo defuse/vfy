@@ -1,11 +1,57 @@
-use super::{cmd, some_line_has, stdout_of, testdata, testdata_base};
+use super::harness::{setup_legacy_test_dirs, Entry, Entry::*};
+use super::{cmd, some_line_has, stdout_of};
 use predicates::prelude::*;
+
+// ===========================================================================
+// Entry arrays for testdata scenarios
+// ===========================================================================
+
+const IDENTICAL: &[Entry] = &[
+    File("hello.txt", "hello world\n"),
+    Dir("sub"),
+    File("sub/nested.txt", "nested file\n"),
+];
+
+const NESTED_ORIG: &[Entry] = &[
+    Dir("sub1"),
+    File("sub1/ok.txt", "ok\n"),
+    File("sub1/missing.txt", "missing\n"),
+    Dir("sub3"),
+    Dir("sub3/deep"),
+    File("sub3/deep/file.txt", "deep\n"),
+];
+
+const NESTED_BACKUP: &[Entry] = &[
+    Dir("sub1"),
+    File("sub1/ok.txt", "ok\n"),
+    Dir("sub2"),
+    File("sub2/extra.txt", "extra\n"),
+];
+
+const EXTRAS_ORIG: &[Entry] = &[File("base.txt", "base content\n")];
+
+const EXTRAS_BACKUP: &[Entry] = &[
+    File("base.txt", "base content\n"),
+    File("extra.txt", "I'm extra\n"),
+    Dir("extra_dir"),
+    File("extra_dir/file.txt", "extra dir file\n"),
+];
+
+const MISSING_ORIG: &[Entry] = &[
+    File("exists.txt", "I exist\n"),
+    File("also_here.txt", "me too\n"),
+];
+
+const MISSING_BACKUP: &[Entry] = &[File("exists.txt", "I exist\n")];
+
+const DIFF_CONTENT_ORIG: &[Entry] = &[File("file.txt", "aaaa")];
+const DIFF_CONTENT_BACKUP: &[Entry] = &[File("file.txt", "bbbb")];
 
 // ── CMD line output ─────────────────────────────────────────
 
 #[test]
 fn cmd_line_printed_no_flags() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().expect("expected CMD: line");
@@ -16,7 +62,7 @@ fn cmd_line_printed_no_flags() {
 
 #[test]
 fn cmd_line_includes_all_flag() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "--all"]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -25,7 +71,7 @@ fn cmd_line_includes_all_flag() {
 
 #[test]
 fn cmd_line_includes_short_a_flag() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "-a"]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -34,7 +80,7 @@ fn cmd_line_includes_short_a_flag() {
 
 #[test]
 fn cmd_line_includes_verbose_flags() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "-v", "-v"]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -46,7 +92,7 @@ fn cmd_line_includes_verbose_flags() {
 
 #[test]
 fn cmd_line_includes_samples_flag() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "-s", "5"]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -57,7 +103,7 @@ fn cmd_line_includes_samples_flag() {
 
 #[test]
 fn cmd_line_includes_follow_flag() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "--follow"]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -66,9 +112,8 @@ fn cmd_line_includes_follow_flag() {
 
 #[test]
 fn cmd_line_includes_ignore_flag() {
-    let base = testdata_base("nested");
-    let (a, b) = testdata("nested");
-    let ignore_path = base.join("a").join("sub3").to_str().unwrap().to_string();
+    let (_tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
+    let ignore_path = format!("{}/sub3", a);
     let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -79,7 +124,7 @@ fn cmd_line_includes_ignore_flag() {
 
 #[test]
 fn cmd_line_includes_one_filesystem_flag() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "--one-filesystem"]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -89,7 +134,7 @@ fn cmd_line_includes_one_filesystem_flag() {
 
 #[test]
 fn cmd_line_includes_multiple_flags() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "-v", "-v", "--all", "-s", "3", "--follow"]).assert().success();
     let output = stdout_of(&assert);
     let cmd_line = output.lines().next().unwrap();
@@ -159,7 +204,7 @@ fn cmd_line_escapes_single_quotes_in_paths() {
 
 #[test]
 fn verbose_dirs_only() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "-v"]).assert().success();
     let output = stdout_of(&assert);
 
@@ -173,7 +218,7 @@ fn verbose_dirs_only() {
 
 #[test]
 fn verbose_files() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd().args([&a, &b, "-v", "-v"]).assert().success();
     let output = stdout_of(&assert);
 
@@ -183,7 +228,7 @@ fn verbose_files() {
 
 #[test]
 fn triple_verbose_errors() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     cmd()
         .args([&a, &b, "-vvv"])
         .assert()
@@ -193,7 +238,7 @@ fn triple_verbose_errors() {
 
 #[test]
 fn quadruple_verbose_errors() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     cmd()
         .args([&a, &b, "-v", "-v", "-v", "-v"])
         .assert()
@@ -203,7 +248,7 @@ fn quadruple_verbose_errors() {
 
 #[test]
 fn verbose_blake3_known_hashes() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd()
         .args([&a, &b, "-v", "-v", "--all"])
         .assert()
@@ -244,7 +289,7 @@ fn verbose_blake3_known_hashes() {
 
 #[test]
 fn sample_and_hash_combined() {
-    let (a, b) = testdata("different_content");
+    let (_tmp, a, b) = setup_legacy_test_dirs(DIFF_CONTENT_ORIG, DIFF_CONTENT_BACKUP);
     cmd()
         .args([&a, &b, "-s", "10", "--all"])
         .assert()
@@ -258,7 +303,7 @@ fn sample_and_hash_combined() {
 
 #[test]
 fn sample_on_identical_content() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     cmd()
         .args([&a, &b, "-s", "10"])
         .assert()
@@ -274,7 +319,7 @@ fn sample_on_identical_content() {
 
 #[test]
 fn ignore_nonexistent_path_errors() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     cmd()
         .args([&a, &b, "-i", "/nonexistent/path/that/does/not/exist"])
         .assert()
@@ -286,7 +331,7 @@ fn ignore_nonexistent_path_errors() {
 
 #[test]
 fn ignore_path_outside_trees_errors() {
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     cmd()
         .args([&a, &b, "-i", "/tmp"])
         .assert()
@@ -296,9 +341,8 @@ fn ignore_path_outside_trees_errors() {
 
 #[test]
 fn ignore_works_in_backup_tree() {
-    let (a, b) = testdata("extras");
-    let base = testdata_base("extras");
-    let ignore_path = base.join("b").join("extra_dir").to_str().unwrap().to_string();
+    let (_tmp, a, b) = setup_legacy_test_dirs(EXTRAS_ORIG, EXTRAS_BACKUP);
+    let ignore_path = format!("{}/extra_dir", b);
 
     let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
     let output = stdout_of(&assert);
@@ -316,10 +360,9 @@ fn ignore_works_in_backup_tree() {
 
 #[test]
 fn ignore_works_in_original_tree() {
-    let (a, b) = testdata("nested");
-    let base = testdata_base("nested");
+    let (_tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
     // Ignore sub3 in the original tree — it's a missing dir with nested contents
-    let ignore_path = base.join("a").join("sub3").to_str().unwrap().to_string();
+    let ignore_path = format!("{}/sub3", a);
 
     let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
     let output = stdout_of(&assert);
@@ -346,14 +389,8 @@ fn ignore_works_in_original_tree() {
 #[test]
 fn ignore_a_file_not_directory() {
     // --ignore on a specific file (not a directory)
-    let (a, b) = testdata("missing");
-    let base = testdata_base("missing");
-    let ignore_path = base
-        .join("a")
-        .join("also_here.txt")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let (_tmp, a, b) = setup_legacy_test_dirs(MISSING_ORIG, MISSING_BACKUP);
+    let ignore_path = format!("{}/also_here.txt", a);
 
     let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
     let output = stdout_of(&assert);
@@ -380,20 +417,9 @@ fn ignore_a_file_not_directory() {
 #[test]
 fn ignore_multiple_paths() {
     // -i path1 -i path2
-    let (a, b) = testdata("nested");
-    let base = testdata_base("nested");
-    let ignore1 = base
-        .join("a")
-        .join("sub3")
-        .to_str()
-        .unwrap()
-        .to_string();
-    let ignore2 = base
-        .join("b")
-        .join("sub2")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let (_tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
+    let ignore1 = format!("{}/sub3", a);
+    let ignore2 = format!("{}/sub2", b);
 
     let assert = cmd()
         .args([&a, &b, "-i", &ignore1, "-i", &ignore2])
@@ -420,14 +446,8 @@ fn ignore_multiple_paths() {
 #[test]
 fn ignore_extra_file_in_backup() {
     // B1: --ignore on an extra FILE in backup tree should skip it
-    let (a, b) = testdata("extras");
-    let base = testdata_base("extras");
-    let ignore_path = base
-        .join("b")
-        .join("extra.txt")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let (_tmp, a, b) = setup_legacy_test_dirs(EXTRAS_ORIG, EXTRAS_BACKUP);
+    let ignore_path = format!("{}/extra.txt", b);
 
     let assert = cmd().args([&a, &b, "-i", &ignore_path]).assert();
     let output = stdout_of(&assert);
@@ -462,15 +482,8 @@ fn ignore_subdir_inside_missing_dir() {
     // count_recursive should skip deep/ (SKIP: + skipped count)
     // but still count sub3/ itself and sub3/deep/file.txt is NOT counted
     // because its parent dir deep/ is skipped entirely.
-    let (a, b) = testdata("nested");
-    let base = testdata_base("nested");
-    let ignore_path = base
-        .join("a")
-        .join("sub3")
-        .join("deep")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let (_tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
+    let ignore_path = format!("{}/sub3/deep", a);
 
     let assert = cmd()
         .args([&a, &b, "-v", "-v", "-i", &ignore_path])
@@ -690,7 +703,7 @@ fn ignore_symlink_to_dir_with_follow() {
 fn ignore_root_directory() {
     // C1: If the root directory itself is ignored, it should not be counted
     // as original/backup/similarity — only as skipped.
-    let (a, b) = testdata("identical");
+    let (_tmp, a, b) = setup_legacy_test_dirs(IDENTICAL, IDENTICAL);
     let assert = cmd()
         .args([&a, &b, "-i", &a])
         .assert()
@@ -728,14 +741,8 @@ fn ignore_root_directory() {
 #[test]
 fn all_with_ignore_skips_hashing() {
     // --all combined with --ignore: ignored entries should not produce BLAKE3 lines
-    let (a, b) = testdata("nested");
-    let base = testdata_base("nested");
-    let ignore_path = base
-        .join("a")
-        .join("sub3")
-        .to_str()
-        .unwrap()
-        .to_string();
+    let (_tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
+    let ignore_path = format!("{}/sub3", a);
 
     let assert = cmd()
         .args([&a, &b, "--all", "-v", "-v", "-i", &ignore_path])
@@ -862,12 +869,11 @@ fn ignore_path_through_symlinked_root_errors() {
 #[test]
 fn ignore_relative_path_with_dot_component() {
     // Relative path with ./ should be normalized and work correctly.
-    // Run from the testdata/nested directory, ignore "./a/sub3"
-    let base = testdata_base("nested");
-    let (a, b) = testdata("nested");
+    // Run from the temp directory, ignore "./a/sub3"
+    let (tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
 
     let assert = cmd()
-        .current_dir(&base)
+        .current_dir(tmp.path())
         .args([&a, &b, "-i", "./a/sub3"])
         .assert();
     let output = stdout_of(&assert);
@@ -887,12 +893,11 @@ fn ignore_relative_path_with_dot_component() {
 #[test]
 fn ignore_relative_path_with_parent_component() {
     // Relative path with ../ should be normalized and resolved correctly.
-    // Run from testdata/nested/a, ignore "../a/sub3" (goes up then back down)
-    let base = testdata_base("nested");
-    let (a, b) = testdata("nested");
+    // Run from tmp/a, ignore "../a/sub3" (goes up then back down)
+    let (tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
 
     let assert = cmd()
-        .current_dir(base.join("a"))
+        .current_dir(tmp.path().join("a"))
         .args([&a, &b, "-i", "../a/sub3"])
         .assert();
     let output = stdout_of(&assert);
@@ -914,11 +919,10 @@ fn ignore_relative_path_complex_normalization() {
     // Path with lots of redundant ./ and ../ components:
     // ./a/../a/./sub3/../sub3/./
     // Should normalize to <cwd>/a/sub3
-    let base = testdata_base("nested");
-    let (a, b) = testdata("nested");
+    let (tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
 
     let assert = cmd()
-        .current_dir(&base)
+        .current_dir(tmp.path())
         .args([&a, &b, "-i", "./a/../a/./sub3/../sub3/."])
         .assert();
     let output = stdout_of(&assert);
@@ -938,12 +942,11 @@ fn ignore_relative_path_complex_normalization() {
 #[test]
 fn ignore_relative_path_deeply_nested_parent_refs() {
     // Go deep then climb back out: a/sub3/deep/../../sub3
-    // From testdata/nested, this should resolve to <base>/a/sub3
-    let base = testdata_base("nested");
-    let (a, b) = testdata("nested");
+    // From tmp dir, this should resolve to <tmp>/a/sub3
+    let (tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
 
     let assert = cmd()
-        .current_dir(&base)
+        .current_dir(tmp.path())
         .args([&a, &b, "-i", "a/sub3/deep/../../sub3"])
         .assert();
     let output = stdout_of(&assert);
@@ -963,12 +966,11 @@ fn ignore_relative_path_deeply_nested_parent_refs() {
 #[test]
 fn ignore_relative_path_bare_name() {
     // Just a bare relative name, no ./ or ../ — still triggers the relative branch
-    // Run from testdata/nested/a so "sub3" resolves to testdata/nested/a/sub3
-    let base = testdata_base("nested");
-    let (a, b) = testdata("nested");
+    // Run from tmp/a so "sub3" resolves to tmp/a/sub3
+    let (tmp, a, b) = setup_legacy_test_dirs(NESTED_ORIG, NESTED_BACKUP);
 
     let assert = cmd()
-        .current_dir(base.join("a"))
+        .current_dir(tmp.path().join("a"))
         .args([&a, &b, "-i", "sub3"])
         .assert();
     let output = stdout_of(&assert);
