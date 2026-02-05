@@ -6,6 +6,7 @@ mod flags;
 mod harness;
 mod inside_missing_extra;
 mod matrix;
+mod release_critical;
 mod symlink_loops;
 mod symlinks;
 mod symlinks_nested;

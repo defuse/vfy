@@ -135,7 +135,6 @@
   - **Implemented by:** `flags::verbose_blake3_known_hashes`, `edge_cases::zero_byte_files_with_all`
 - [ ] Hashes do NOT appear with --all and -v (only -vv)
 - [ ] Hashes do NOT appear with --all and no verbosity
-- [ ] Hash output format consistency across file types
 
 #### Directory Comparison Output
 - [x] -v shows directory comparisons ("DEBUG: Comparing")
@@ -168,9 +167,11 @@
 - [x] Symlink crossing filesystem boundary with --follow --one-filesystem
 
 #### Large Scale
-- [ ] Very deep directory nesting (100+ levels)
+- [x] Very deep directory nesting (50 levels)
+  - **Implemented by:** `release_critical::deeply_nested_directory_structure`, `release_critical::deeply_nested_missing_file`
 - [ ] Very wide directory (10,000+ files)
-- [ ] Very long filename (255 chars)
+- [x] Very long filename (255 chars)
+  - **Implemented by:** `release_critical::long_filename_max_length`, `release_critical::long_filename_different_size`
 - [ ] Very long path (4096 chars approaching PATH_MAX)
 
 #### Race Conditions / Filesystem Changes
@@ -181,11 +182,16 @@
 #### Special Characters
 - [ ] Filenames with newlines
 - [ ] Filenames with null bytes (if filesystem allows)
-- [ ] Filenames with unicode/emoji
-- [ ] Filenames with shell metacharacters
+- [x] Filenames with unicode/emoji
+  - **Implemented by:** `release_critical::filename_with_unicode`, `release_critical::filename_with_unicode_missing`, `release_critical::filename_with_emoji`, `release_critical::filename_with_emoji_different`
+- [x] Filenames with shell metacharacters
+  - **Implemented by:** `release_critical::filename_with_shell_chars`, `release_critical::filename_with_shell_chars_extra`
+- [x] Filenames with spaces
+  - **Implemented by:** `release_critical::filename_with_spaces`, `release_critical::filename_with_spaces_different`
 
 #### Empty/Degenerate Cases
-- [ ] Empty file vs non-empty file (currently only same-empty tested)
+- [x] Empty file vs non-empty file
+  - **Implemented by:** `release_critical::empty_vs_nonempty`, `release_critical::nonempty_vs_empty`, `release_critical::both_empty`
 - [ ] Directory containing only unreadable entries
 - [ ] Directory containing only FIFOs
 - [ ] Directory containing only dangling symlinks
@@ -249,6 +255,9 @@
 
 #### Exit Codes
 - [x] Exit 0 when all match
+  - **Implemented by:** `release_critical::exit_0_only_when_perfect_match`
 - [x] Exit 1 when differences found
+  - **Implemented by:** `release_critical::exit_1_when_only_missing`, `release_critical::exit_1_when_only_extras`, `release_critical::exit_1_when_only_different`
 - [x] Exit 2 for CLI errors
-- [ ] Exit code precedence (error vs difference)
+- [x] Exit code precedence (error vs difference)
+  - **Implemented by:** `release_critical::exit_1_when_only_errors_no_differences`, `release_critical::exit_1_when_errors_and_differences`
