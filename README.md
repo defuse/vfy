@@ -1,9 +1,14 @@
 # vfy
 
-`vfy` is a simple directory comparison tool, useful for verifying that backups
-have been completed or restored successfully. By default, it compares only by
-file size, but it also supports checking random samples within files (with
-`--samples N`) or full hash-based comparison (with `--all`).
+`vfy` is a directory comparison tool, useful for checking if backups have been
+completed or restored successfully.
+
+By default, it compares only by file size, but it also supports checking random
+samples within files (with `--samples N`) or full BLAKE3 hash-based comparison
+(with `--all`).
+
+To install, clone the repo and run `cargo install --path .` and make sure
+`~/.cargo/bin` is in your `$PATH`.
 
 ```
 $ vfy
@@ -49,3 +54,5 @@ Output prefixes (grep-friendly):
   DEBUG:                         Verbose logging (-v dirs, -vv files and hashes)
   SUMMARY:                       Final counts
 ```
+
+**AI Use Disclosure:** This tool was developed with the aid of claude code.
