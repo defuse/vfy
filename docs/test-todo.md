@@ -56,12 +56,20 @@
 
 ### Nested Symlinks (Symlink Chains)
 
-- [ ] Symlink to symlink to file (2-level chain)
-- [ ] Symlink to symlink to dir (2-level chain)
-- [ ] Symlink to symlink to dangling (chain ending in dangling)
-- [ ] Deep symlink chain (3+ levels)
-- [ ] Mixed chain: symlink -> symlink -> dir with files inside
-- [ ] Chain with --follow vs without --follow behavior
+- [x] Symlink to symlink to file (2-level chain)
+  - **Implemented by:** `symlinks_nested::chain_to_file_no_follow`, `symlinks_nested::chain_to_file_with_follow`
+- [x] Symlink to symlink to dir (2-level chain)
+  - **Implemented by:** `symlinks_nested::chain_to_dir_no_follow`, `symlinks_nested::chain_to_dir_with_follow`
+- [x] Symlink to symlink to dangling (chain ending in dangling)
+  - **Implemented by:** `symlinks_nested::chain_to_dangling_no_follow`, `symlinks_nested::chain_to_dangling_with_follow`
+- [x] Deep symlink chain (3+ levels)
+  - **Implemented by:** `symlinks_nested::deep_chain_three_levels_no_follow`, `symlinks_nested::deep_chain_three_levels_with_follow`
+- [x] Mixed chain: symlink -> symlink -> dir with files inside
+  - **Implemented by:** `symlinks_nested::chain_to_dir_with_follow`, `symlinks_nested::chain_to_dir_with_differences_follow`
+- [x] Chain with --follow vs without --follow behavior
+  - **Implemented by:** All `symlinks_nested::*_no_follow` and `*_with_follow` test pairs
+- [x] Symlink to directory containing symlinks (--follow traverses into dir, finds more symlinks)
+  - **Implemented by:** `symlinks_nested::symlink_to_dir_containing_symlink_with_follow`
 
 ### Inside Missing/Extra Directories
 

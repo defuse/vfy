@@ -6,6 +6,7 @@ mod harness;
 mod matrix;
 mod symlink_loops;
 mod symlinks;
+mod symlinks_nested;
 
 use assert_cmd::Command;
 
