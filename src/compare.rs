@@ -34,6 +34,9 @@ enum EntryKind {
     File,
     Dir,
     Symlink,
+    Special,
+    Dangling,
+    Error
 }
 
 impl Direction {
@@ -42,9 +45,15 @@ impl Direction {
             (Direction::Missing, EntryKind::File) => "MISSING-FILE",
             (Direction::Missing, EntryKind::Dir) => "MISSING-DIR",
             (Direction::Missing, EntryKind::Symlink) => "MISSING-SYMLINK",
+            (Direction::Missing, EntryKind::Dangling) => "MISSING-SYMLINK",
+            (Direction::Missing, EntryKind::Special) => "MISSING-SPECIAL",
+            (Direction::Missing, EntryKind::Error) => "MISSING-ERROR",
             (Direction::Extra, EntryKind::File) => "EXTRA-FILE",
             (Direction::Extra, EntryKind::Dir) => "EXTRA-DIR",
             (Direction::Extra, EntryKind::Symlink) => "EXTRA-SYMLINK",
+            (Direction::Extra, EntryKind::Dangling) => "EXTRA-SYMLINK",
+            (Direction::Extra, EntryKind::Special) => "EXTRA-SPECIAL",
+            (Direction::Extra, EntryKind::Error) => "EXTRA-ERROR",
         }
     }
 
@@ -69,7 +78,10 @@ impl Meta {
             Meta::File(_) => EntryKind::File,
             Meta::Dir(_, _) => EntryKind::Dir,
             Meta::Symlink => EntryKind::Symlink,
-            _ => unreachable!("classify called on {:?}", self),
+            Meta::Special => EntryKind::Special,
+            Meta::Dangling => EntryKind::Dangling,
+            Meta::Error(_) => EntryKind::Error,
+            //_ => unreachable!("classify called on {:?}", self),
         }
     }
 
@@ -517,29 +529,28 @@ fn report(
         Meta::Error(msg) => {
             println!("ERROR: {}", msg);
             stats.inc_errors();
-            return;
         }
         Meta::Dangling => {
             println!("DANGLING-SYMLINK: [{}]", path.display());
             stats.inc_errors();
-            return;
         }
         _ => {}
     }
 
     if matches!(meta, Meta::Special) {
-        if print {
-            println!("SPECIAL-FILE: [{}]", path.display());
-        }
+        println!("SPECIAL-FILE: [{}]", path.display());
         stats.inc_special_files();
-        return;
     }
 
     let kind = meta.classify();
-    if print {
-        println!("{}: [{}]", direction.prefix(kind), path.display());
+    // If we have a dangling symlink, it's already been reported as MISSING-SYMLINK by the report() one stack level up.
+    // TODO: To ensure correctness, we need to verify that *other* callers of report are always using follow=false.
+    if !matches!(meta, Meta::Dangling) {
+        if print {
+            println!("{}: [{}]", direction.prefix(kind), path.display());
+        }
+        direction.inc_count(stats);
     }
-    direction.inc_count(stats);
 
     let print_children = config.verbosity >= Verbosity::Files;
 
@@ -552,8 +563,8 @@ fn report(
         Meta::Symlink if config.follow => {
             report(path, direction, true, print_children, config, stats);
         }
-        Meta::File(_) | Meta::Symlink => {}
-        _ => unreachable!("report: unexpected meta {:?} after classify", meta),
+        Meta::File(_) | Meta::Symlink  | Meta::Special | Meta::Dangling | Meta::Error(_)  => {}
+        //_ => unreachable!("report: unexpected meta {:?} after classify", meta),
     }
 }
 

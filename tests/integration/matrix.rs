@@ -264,10 +264,11 @@ case!(fifo_x_absent {
     flags: [],
     lines: [
         "SPECIAL-FILE: a/entry",
+        "MISSING-SPECIAL: a/entry",
     ],
     original_processed: 2,
     backup_processed: 1,
-    missing: 0,
+    missing: 1,
     different: 0,
     extras: 0,
     special_files: 1,

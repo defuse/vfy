@@ -201,7 +201,8 @@ case!(deep_identical_tree {
 // Special file tests (FIFOs)
 // ===========================================================================
 
-// FIFO missing from backup should be SPECIAL-FILE, not MISSING-FILE
+// FIFO missing from backup: SPECIAL-FILE + MISSING-SPECIAL (not MISSING-FILE)
+// FIFOs count toward both special_files and missing
 case!(special_file_missing_from_backup {
     orig: [
         Fifo("my_fifo"),
@@ -213,6 +214,7 @@ case!(special_file_missing_from_backup {
     flags: [],
     lines: [
         "SPECIAL-FILE: a/my_fifo",
+        "MISSING-SPECIAL: a/my_fifo",
     ],
     debug_contains: [],
     debug_excludes: [],
@@ -220,7 +222,7 @@ case!(special_file_missing_from_backup {
     output_excludes: ["MISSING-FILE: my_fifo"],
     original_processed: 3,
     backup_processed: 2,
-    missing: 0,
+    missing: 1,
     different: 0,
     extras: 0,
     special_files: 1,
@@ -229,7 +231,8 @@ case!(special_file_missing_from_backup {
     errors: 0,
 });
 
-// FIFO extra in backup should be SPECIAL-FILE, not EXTRA-FILE
+// FIFO extra in backup: SPECIAL-FILE + EXTRA-SPECIAL (not EXTRA-FILE)
+// FIFOs count toward both special_files and extras
 case!(special_file_extra_in_backup {
     orig: [
         File("ok.txt", "ok\n"),
@@ -241,6 +244,7 @@ case!(special_file_extra_in_backup {
     flags: [],
     lines: [
         "SPECIAL-FILE: b/my_fifo",
+        "EXTRA-SPECIAL: b/my_fifo",
     ],
     debug_contains: [],
     debug_excludes: [],
@@ -250,7 +254,7 @@ case!(special_file_extra_in_backup {
     backup_processed: 3,
     missing: 0,
     different: 0,
-    extras: 0,
+    extras: 1,
     special_files: 1,
     similarities: 2,
     skipped: 0,
@@ -360,6 +364,7 @@ case!(special_file_via_symlink_follow {
 
 // Symlink to /dev/null missing from backup with --follow
 // With --follow, symlinks count as 2 items: the symlink entry + resolved target
+// The resolved /dev/null is a special file, so we get SPECIAL-FILE too
 case!(special_files_missing_from_backup {
     orig: [
         Dir("sub"),
@@ -373,11 +378,13 @@ case!(special_files_missing_from_backup {
     flags: ["--follow"],
     lines: [
         "MISSING-SYMLINK: a/sub/devnull",
+        "SPECIAL-FILE: a/sub/devnull",
     ],
     // root + sub + ok.txt + devnull symlink (2 with --follow) = 5
     original_processed: 5,
     backup_processed: 3,
-    missing: 1,
+    // symlink + resolved special file = 2 missing
+    missing: 2,
     different: 0,
     extras: 0,
     // The resolved /dev/null is a special file, counted
@@ -389,6 +396,7 @@ case!(special_files_missing_from_backup {
 
 // Symlink to /dev/null extra in backup with --follow
 // With --follow, symlinks count as 2 items: the symlink entry + resolved target
+// The resolved /dev/null is a special file, so we get SPECIAL-FILE too
 case!(special_files_extra_in_backup {
     orig: [
         Dir("sub"),
@@ -402,13 +410,15 @@ case!(special_files_extra_in_backup {
     flags: ["--follow"],
     lines: [
         "EXTRA-SYMLINK: b/sub/devnull",
+        "SPECIAL-FILE: b/sub/devnull",
     ],
     original_processed: 3,
     // root + sub + ok.txt + devnull symlink (2 with --follow) = 5
     backup_processed: 5,
     missing: 0,
     different: 0,
-    extras: 1,
+    // symlink + resolved special file = 2 extras
+    extras: 2,
     // The resolved /dev/null is a special file, counted
     special_files: 1,
     similarities: 3,

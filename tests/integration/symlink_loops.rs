@@ -210,6 +210,7 @@ case!(loop_in_subdir_with_follow {
 // Loop in one tree, valid file in other tree
 // orig has a self-loop, backup has a real file
 // With --follow, orig loop errors, backup file becomes extra
+// The failed resolution attempt also counts as missing
 case!(loop_in_orig_valid_in_backup {
     orig: [
         Sym("entry", "entry"),
@@ -230,8 +231,8 @@ case!(loop_in_orig_valid_in_backup {
     output_excludes: [],
     original_processed: 3,
     backup_processed: 2,
-    // Symlink counted as missing
-    missing: 1,
+    // Symlink + failed resolution = 2 missing
+    missing: 2,
     // Type mismatch
     different: 1,
     // File is extra
@@ -246,6 +247,7 @@ case!(loop_in_orig_valid_in_backup {
 
 // Valid file in orig, loop in backup
 // With --follow, backup loop errors, orig file becomes missing
+// The failed resolution attempt also counts as extra
 case!(valid_in_orig_loop_in_backup {
     orig: [
         File("entry", "content\n"),
@@ -270,8 +272,8 @@ case!(valid_in_orig_loop_in_backup {
     missing: 1,
     // Type mismatch
     different: 1,
-    // Symlink is extra
-    extras: 1,
+    // Symlink + failed resolution = 2 extras
+    extras: 2,
     special_files: 0,
     // root
     similarities: 1,

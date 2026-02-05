@@ -11,9 +11,13 @@ Output prefixes (grep-friendly):
   MISSING-FILE:                  File in original missing from backup
   MISSING-DIR:                   Directory in original missing from backup
   MISSING-SYMLINK:               Symlink in original missing from backup
+  MISSING-SPECIAL:               Special file in original missing from backup
+  MISSING-ERROR:                 Something (that errored) in original missing from backup
   EXTRA-FILE:                    File in backup not in original
   EXTRA-DIR:                     Directory in backup not in original
   EXTRA-SYMLINK:                 Symlink in backup not in original
+  EXTRA-SPECIAL:                 Extra special file in backup not in original
+  EXTRA-ERROR:                   Extra something (that errored) in backup not in original
   DIFFERENT-FILE [reason]:       File differs (reason: first mismatch of SIZE, SAMPLE, HASH)
   FILE-DIR-MISMATCH:             One side is a file, the other is a directory
   DIFFERENT-SYMLINK-TARGET:      Both sides are symlinks but point to different targets

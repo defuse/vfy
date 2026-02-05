@@ -3,6 +3,7 @@ mod edge_cases;
 mod errors;
 mod flags;
 mod harness;
+mod inside_missing_extra;
 mod matrix;
 mod symlink_loops;
 mod symlinks;

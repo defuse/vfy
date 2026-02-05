@@ -74,38 +74,57 @@
 ### Inside Missing/Extra Directories
 
 #### FIFOs Inside Missing/Extra Dirs
-- [ ] FIFO inside missing directory (orig has dir with FIFO, backup missing dir)
-- [ ] FIFO inside extra directory (backup has dir with FIFO, orig missing dir)
-- [ ] Multiple FIFOs inside missing/extra dir
-- [ ] FIFO nested deeply inside missing/extra dir
+- [x] FIFO inside missing directory (orig has dir with FIFO, backup missing dir)
+  - **Implemented by:** `inside_missing_extra::fifo_inside_missing_dir`, `inside_missing_extra::fifo_inside_missing_dir_vv`
+- [x] FIFO inside extra directory (backup has dir with FIFO, orig missing dir)
+  - **Implemented by:** symmetric tests via case! macro
+- [x] Multiple FIFOs inside missing/extra dir
+  - **Implemented by:** `inside_missing_extra::multiple_fifos_inside_missing_dir`
+- [x] FIFO nested deeply inside missing/extra dir
+  - **Implemented by:** `inside_missing_extra::fifo_nested_deeply_inside_missing_dir`, `inside_missing_extra::fifo_nested_deeply_inside_missing_dir_vv`
 
 #### Errors Inside Missing/Extra Dirs
-- [ ] Unreadable file inside missing directory
-- [ ] Unreadable file inside extra directory
-- [ ] Unreadable subdir inside missing directory
-- [ ] Unreadable subdir inside extra directory
+- [x] Unreadable file inside missing directory
+  - **Implemented by:** `inside_missing_extra::unreadable_file_inside_missing_dir`, `inside_missing_extra::unreadable_file_inside_missing_dir_vv`
+  - **Note:** No ERROR when dir is missing (only stat, not read)
+- [x] Unreadable file inside extra directory
+  - **Implemented by:** symmetric tests via case! macro
+- [x] Unreadable subdir inside missing directory
+  - **Implemented by:** `inside_missing_extra::unreadable_subdir_inside_missing_dir`, `inside_missing_extra::unreadable_subdir_inside_missing_dir_vv`
+- [x] Unreadable subdir inside extra directory
+  - **Implemented by:** symmetric tests via case! macro
 
 #### Dangling Symlinks Inside Missing/Extra Dirs
-- [ ] Dangling symlink inside missing directory (no --follow)
-- [ ] Dangling symlink inside missing directory (with --follow)
-- [ ] Dangling symlink inside extra directory (no --follow)
-- [ ] Dangling symlink inside extra directory (with --follow)
+- [x] Dangling symlink inside missing directory (no --follow)
+  - **Implemented by:** `inside_missing_extra::dangling_symlink_inside_missing_dir_no_follow`, `inside_missing_extra::dangling_symlink_inside_missing_dir_no_follow_vv`
+- [x] Dangling symlink inside missing directory (with --follow)
+  - **Implemented by:** `inside_missing_extra::dangling_symlink_inside_missing_dir_with_follow`, `inside_missing_extra::dangling_symlink_inside_missing_dir_with_follow_vv`
+- [x] Dangling symlink inside extra directory (no --follow)
+  - **Implemented by:** symmetric tests via case! macro
+- [x] Dangling symlink inside extra directory (with --follow)
+  - **Implemented by:** symmetric tests via case! macro
 
 #### Counting Inside Missing/Extra Dirs
 - [x] Basic counting without --follow
   - **Implemented by:** `basic::nested`, `basic::nested_vv`
-- [ ] Counting with --follow when symlinks inside missing/extra dir
-- [ ] Mixed content (files, dirs, symlinks, FIFOs) inside missing dir - verify counts
-- [ ] Mixed content inside extra dir - verify counts
+- [x] Counting with --follow when symlinks inside missing/extra dir
+  - **Implemented by:** `inside_missing_extra::counting_with_follow_symlink_inside_missing_dir`, `inside_missing_extra::counting_with_follow_symlink_inside_missing_dir_vv`
+- [x] Mixed content (files, dirs, symlinks, FIFOs) inside missing dir - verify counts
+  - **Implemented by:** `inside_missing_extra::mixed_content_inside_missing_dir`, `inside_missing_extra::mixed_content_inside_missing_dir_vv`, `inside_missing_extra::mixed_content_inside_missing_dir_follow`
+- [x] Mixed content inside extra dir - verify counts
+  - **Implemented by:** symmetric tests via case! macro
 
 #### Verbosity for Missing/Extra Dir Contents
 - [x] No -v: top-level missing/extra shown, children not listed individually
   - **Implemented by:** `basic::nested`, `errors::type_mismatch_combined`
 - [x] -vv: all children listed individually
   - **Implemented by:** `basic::nested_vv`, `errors::type_mismatch_combined_vv`
-- [ ] -v (single): behavior for missing/extra dir contents (should match no -v?)
-- [ ] Verify FIFO inside missing dir output at each verbosity level
-- [ ] Verify dangling symlink inside missing dir output at each verbosity level
+- [x] -v (single): behavior for missing/extra dir contents (should match no -v?)
+  - **Implemented by:** `inside_missing_extra::single_v_missing_dir_contents`
+- [x] Verify FIFO inside missing dir output at each verbosity level
+  - **Implemented by:** `inside_missing_extra::fifo_verbosity_no_v`, `inside_missing_extra::fifo_verbosity_single_v`, `inside_missing_extra::fifo_verbosity_vv`
+- [x] Verify dangling symlink inside missing dir output at each verbosity level
+  - **Implemented by:** `inside_missing_extra::dangling_verbosity_no_v_no_follow`, `inside_missing_extra::dangling_verbosity_no_v_with_follow`, `inside_missing_extra::dangling_verbosity_vv_with_follow`
 
 ### Verbosity Behavior Outside Missing/Extra
 
