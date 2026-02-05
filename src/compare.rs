@@ -522,9 +522,38 @@ fn report(
         return;
     }
 
-    direction.inc_items(stats);
-
     let meta = load_meta(path, follow);
+
+    // Check --one-filesystem before processing directories on different filesystems.
+    // This handles both mount points (follow=false) and resolved symlinks (follow=true).
+    if config.one_filesystem {
+        if let Meta::Dir(dir_meta, _) = &meta {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::MetadataExt;
+                if let Some(parent) = path.parent() {
+                    if let Ok(parent_meta) = fs::metadata(parent) {
+                        if dir_meta.dev() != parent_meta.dev() {
+                            // For mount points (follow=false), report the entry before skipping.
+                            // For resolved symlinks (follow=true), the symlink was already reported.
+                            if !follow {
+                                direction.inc_items(stats);
+                                if print {
+                                    println!("{}: [{}]", direction.prefix(EntryKind::Dir), path.display());
+                                }
+                                direction.inc_count(stats);
+                            }
+                            println!("DIFFERENT-FS: [{}]", path.display());
+                            stats.inc_skipped();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    direction.inc_items(stats);
 
     match &meta {
         Meta::Error(msg) => {

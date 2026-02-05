@@ -165,7 +165,7 @@
 
 #### Filesystem Boundaries
 - [ ] --one-filesystem actually stops at mount points
-- [ ] Symlink crossing filesystem boundary with --follow --one-filesystem
+- [x] Symlink crossing filesystem boundary with --follow --one-filesystem
 
 #### Large Scale
 - [ ] Very deep directory nesting (100+ levels)
