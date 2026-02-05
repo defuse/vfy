@@ -1,8 +1,13 @@
-This is a tool for verifying your backups completed successfully.
+# vfy
+
+`vfy` is a simple directory comparison tool, useful for verifying that backups
+have been completed or restored successfully. By default, it compares only by
+file size, but it also supports checking random samples within files (with
+`--samples N`) or full hash-based comparison (with `--all`).
 
 ```
 $ vfy
-CMD: vfy
+CMD: target/debug/vfy
 Verify backup integrity by comparing directory trees
 
 Usage: vfy [OPTIONS] <ORIGINAL> <BACKUP>
@@ -15,7 +20,7 @@ Options:
   -v, --verbose...         Verbose output (-v for dirs, -vv for files)
   -s, --samples <SAMPLES>  Number of random samples to compare per file [default: 0]
   -a, --all                Full BLAKE3 hash comparison
-  -f, --follow             Follow symlinks into directories
+  -f, --follow             Compare symlinked-to contents (symlink target paths are always compared, even without --follow)
   -o, --one-filesystem     Stay on one filesystem
   -i, --ignore <IGNORE>    Directories to ignore (can be specified multiple times)
   -h, --help               Print help
@@ -24,9 +29,13 @@ Output prefixes (grep-friendly):
   MISSING-FILE:                  File in original missing from backup
   MISSING-DIR:                   Directory in original missing from backup
   MISSING-SYMLINK:               Symlink in original missing from backup
+  MISSING-SPECIAL:               Special file in original missing from backup
+  MISSING-ERROR:                 Something (that errored) in original missing from backup
   EXTRA-FILE:                    File in backup not in original
   EXTRA-DIR:                     Directory in backup not in original
   EXTRA-SYMLINK:                 Symlink in backup not in original
+  EXTRA-SPECIAL:                 Extra special file in backup not in original
+  EXTRA-ERROR:                   Extra something (that errored) in backup not in original
   DIFFERENT-FILE [reason]:       File differs (reason: first mismatch of SIZE, SAMPLE, HASH)
   FILE-DIR-MISMATCH:             One side is a file, the other is a directory
   DIFFERENT-SYMLINK-TARGET:      Both sides are symlinks but point to different targets
