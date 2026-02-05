@@ -98,11 +98,11 @@ impl Meta {
 
 /// Load metadata for a path. All I/O happens here.
 ///
-/// `follow=false`: uses symlink_metadata (default)
-/// `follow=true`: uses metadata (follows symlinks), plus readdir for dirs.
-///   Returns Dangling if the target doesn't exist (NotFound).
+/// `follow=false`: uses symlink_metadata (default), symlinks returned as Meta::Symlink
+/// `follow=true`: uses metadata (follows symlinks), returns Dangling if target doesn't exist
 ///
-/// A directory that stats OK but can't be read is Error.
+/// For directories (in either mode), also reads directory entries.
+/// A directory that stats OK but can't be read returns Error.
 fn load_meta(path: &Path, follow: bool) -> Meta {
     let meta = if follow {
         match fs::metadata(path) {
@@ -141,7 +141,24 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
     } else if ft.is_file() {
         Meta::File(meta)
     } else {
-        Meta::Special
+        // Block devices, char devices, FIFOs, sockets, etc.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::FileTypeExt;
+            if ft.is_block_device()
+                || ft.is_char_device()
+                || ft.is_fifo()
+                || ft.is_socket()
+            {
+                Meta::Special
+            } else {
+                Meta::Error(format!("Unknown file type at [{}]", path.display()))
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            Meta::Special
+        }
     }
 }
 
