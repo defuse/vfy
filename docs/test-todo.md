@@ -39,12 +39,20 @@
 
 ### Symlink Loops
 
-- [ ] Simple loop: `a -> b -> a` with --follow reports ERROR gracefully
-- [ ] Self-referential: `a -> a` with --follow reports ERROR
-- [ ] Longer chain loop: `a -> b -> c -> a` with --follow
-- [ ] Loop in subdirectory during traversal
-- [ ] Loop detection increments error count correctly
-- [ ] Loop in one tree, valid path in other tree
+- [x] Simple loop: `a -> b -> a` with --follow reports ERROR gracefully
+  - **Implemented by:** `symlink_loops::two_link_loop_with_follow`
+- [x] Self-referential: `a -> a` with --follow reports ERROR
+  - **Implemented by:** `symlink_loops::self_loop_with_follow`
+- [x] Longer chain loop: `a -> b -> c -> a` with --follow
+  - **Implemented by:** `symlink_loops::three_link_chain_loop_with_follow`
+- [x] Loop in subdirectory during traversal
+  - **Implemented by:** `symlink_loops::loop_in_subdir_with_follow`
+- [x] Loop detection increments error count correctly
+  - **Verified by:** all `*_with_follow` tests check Errors count
+- [x] Loop in one tree, valid path in other tree
+  - **Implemented by:** `symlink_loops::loop_in_orig_valid_in_backup`, `symlink_loops::valid_in_orig_loop_in_backup`
+- [x] No error without --follow (symlinks compared by target only)
+  - **Implemented by:** `symlink_loops::self_loop_no_follow`, `symlink_loops::two_link_loop_no_follow`
 
 ### Nested Symlinks (Symlink Chains)
 

@@ -4,6 +4,7 @@ mod errors;
 mod flags;
 mod harness;
 mod matrix;
+mod symlink_loops;
 mod symlinks;
 
 use assert_cmd::Command;
