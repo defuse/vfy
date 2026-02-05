@@ -545,7 +545,7 @@ fn report(
 
     let kind = meta.classify();
     // If we have a dangling symlink, it's already been reported as MISSING-SYMLINK by the report() one stack level up.
-    // TODO: To ensure correctness, we need to verify that *other* callers of report are always using follow=false.
+    // To ensure correctness, we need to verify that *other* callers of report are always using follow=false.
     if !matches!(meta, Meta::Dangling) {
         if print {
             println!("{}: [{}]", direction.prefix(kind), path.display());

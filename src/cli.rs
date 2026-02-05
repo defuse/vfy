@@ -38,7 +38,21 @@ Output prefixes (grep-friendly):
   SKIP:                          Entry skipped via --ignore
   ERROR:                         I/O or permission error
   DEBUG:                         Verbose logging (-v dirs, -vv files and hashes)
-  SUMMARY:                       Final counts (not guaranteed to add up to 100%)"
+  SUMMARY:                       Final counts (not guaranteed to add up to 100%)
+
+Symlink handling with --follow:
+  When both sides are symlinks with different targets:
+    - Reports DIFFERENT-SYMLINK-TARGET as a warning
+    - Continues comparing resolved contents (may find similarities)
+
+  When one side is a symlink and the other is a regular file/directory:
+    - Reports DIFFERENT-SYMLINK-STATUS as structural mismatch
+    - Reports original as MISSING-*, backup symlink as EXTRA-*
+    - Does NOT compare contents (structural failure means no backup exists)
+
+  Rationale: A symlink replacing a directory is a structural failure--the backup
+  tree doesn't contain the actual data. Two symlinks with different targets is
+  a metadata difference--the resolved data may still be equivalent."
 )]
 
 pub struct Cli {
