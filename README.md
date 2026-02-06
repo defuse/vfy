@@ -78,3 +78,5 @@ Symlink handling with --follow:
   tree doesn't contain the actual data. Two symlinks with different targets is
   a metadata difference--the resolved data may still be equivalent.
 ```
+
+**AI Use Disclosure:** This tool was developed with the aid of claude code.
