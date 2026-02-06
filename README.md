@@ -26,8 +26,8 @@ Options:
   -s, --samples <SAMPLES>  Number of random samples to compare per file [default: 0]
   -a, --all                Full BLAKE3 hash comparison
   -f, --follow             Compare symlinked-to contents (symlink target paths are always compared, even without --follow)
-  -o, --one-filesystem     Stay on one filesystem
-  -i, --ignore <IGNORE>    Directories to ignore (can be specified multiple times)
+  -o, --one-filesystem     Stay on one filesystem (only supported on Unix-like OSes)
+  -i, --ignore <IGNORE>    Directories to ignore (can be specified multiple times). Must exist in original or backup
   -h, --help               Print help
 
 WARNING: Output behavior is currently NOT STABLE between releases.
@@ -77,4 +77,4 @@ Symlink handling with --follow:
   Rationale: A symlink replacing a directory is a structural failure--the backup
   tree doesn't contain the actual data. Two symlinks with different targets is
   a metadata difference--the resolved data may still be equivalent.
-  ```
+```
