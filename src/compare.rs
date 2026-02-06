@@ -75,7 +75,7 @@ impl Meta {
     }
 }
 
-// ── Metadata loading ─────────────────────────────────────────────────────────
+// -- Metadata loading ---------------------------------------------------------
 
 /// Load metadata for a path.
 ///
@@ -147,7 +147,16 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
     }
 }
 
-// ── Entry point ──────────────────────────────────────────────────────────────
+fn read_dir_entries(dir: &Path) -> Result<Vec<OsString>, std::io::Error> {
+    let mut entries = Vec::new();
+    for entry in fs::read_dir(dir)? {
+        let entry = entry?;
+        entries.push(entry.file_name());
+    }
+    Ok(entries)
+}
+
+// -- Entry point --------------------------------------------------------------
 
 /// Compare directories according to the provided Config.
 /// Populates stats with counts and prints log messages to stdout.
@@ -155,7 +164,7 @@ pub fn compare_dirs(config: &Config, stats: &Stats) {
     compare(&config.original, &config.backup, false, config, stats);
 }
 
-// ── Comparison ───────────────────────────────────────────────────────────────
+// -- Comparison ---------------------------------------------------------------
 
 /// Compare two paths at the same relative position in both trees.
 ///
@@ -344,8 +353,6 @@ fn compare(
     }
 }
 
-// ── compare_files ────────────────────────────────────────────────────────────
-
 /// Compare two files.
 ///
 /// Pre: Both are files. Neither counted. Metadata loaded.
@@ -397,8 +404,6 @@ fn compare_files(
     }
 }
 
-// ── compare_directories ──────────────────────────────────────────────────────
-
 /// Compare two directories.
 ///
 /// Pre: Both are dirs. Entries pre-loaded. Neither counted.
@@ -445,8 +450,6 @@ fn compare_directories(
         report(&backup_path, Direction::Extra, false, true, config, stats);
     }
 }
-
-// ── compare_symlinks ─────────────────────────────────────────────────────────
 
 /// Compare two symlinks.
 ///
@@ -523,7 +526,7 @@ fn compare_symlinks(
     compare(orig, backup, true, config, stats);
 }
 
-// ── report ───────────────────────────────────────────────────────────────────
+// -- report -------------------------------------------------------------------
 
 /// Report a path and all descendants as missing or extra.
 ///
@@ -625,7 +628,7 @@ fn report(
     }
 }
 
-// ── File content comparison ──────────────────────────────────────────────────
+// -- File content comparison --------------------------------------------------
 
 enum FileCompareResult {
     Same,
@@ -766,17 +769,6 @@ fn compare_file_content(
     } else {
         FileCompareResult::Same
     }
-}
-
-// ── Utilities ────────────────────────────────────────────────────────────────
-
-fn read_dir_entries(dir: &Path) -> Result<Vec<OsString>, std::io::Error> {
-    let mut entries = Vec::new();
-    for entry in fs::read_dir(dir)? {
-        let entry = entry?;
-        entries.push(entry.file_name());
-    }
-    Ok(entries)
 }
 
 /// The caller must ensure offset + len <= file size, otherwise hitting an EOF
