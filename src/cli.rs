@@ -158,11 +158,6 @@ impl Config {
             ignore.push(resolved);
         }
 
-        #[cfg(not(unix))]
-        if cli.one_filesystem {
-            return Err("--one-filesystem is not supported on this platform".to_string());
-        }
-
         // Get device IDs for --one-filesystem check
         #[cfg(unix)]
         let (original_device, backup_device) = if cli.one_filesystem {
