@@ -244,7 +244,8 @@ case!(unreadable_file_in_original {
     ],
     flags: ["--all"],
     lines: [
-        "ERROR: noperm.txt",
+        "ERROR: a/noperm.txt",
+        "SKIP: b/noperm.txt",
     ],
     debug_contains: [],
     debug_excludes: [],
@@ -258,7 +259,7 @@ case!(unreadable_file_in_original {
     extras: 0,
     special_files: 0,
     similarities: 2,
-    skipped: 0,
+    skipped: 1,
     errors: 1,
     symmetric: false,
 });
@@ -450,6 +451,7 @@ case!(orig_unreadable_samples {
     flags: ["-s", "1"],
     lines: [
         "ERROR: a/file.txt",
+        "SKIP: b/file.txt",
     ],
     debug_contains: [],
     debug_excludes: [],
@@ -462,7 +464,7 @@ case!(orig_unreadable_samples {
     extras: 0,
     special_files: 0,
     similarities: 1,
-    skipped: 0,
+    skipped: 1,
     errors: 1,
     symmetric: false,
 });

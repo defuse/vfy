@@ -1,7 +1,9 @@
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-// Counts are currently not mutually-exclusive, i.e. it won't add up to 100%
+/// Counts are currently not mutually-exclusive, i.e. it won't add up to 100%
+/// and may not correspond to real items, e.g. when one side is ignored, we
+/// output a SKIP for the opposite-side path regardless of whether it exists.
 pub struct Stats {
     original_items: AtomicU64,
     backup_items: AtomicU64,
