@@ -72,7 +72,7 @@ Symlink handling with --follow:
   When one side is a symlink and the other is a regular file/directory:
     - Reports DIFFERENT-SYMLINK-STATUS as structural mismatch
     - Reports original as MISSING-*, backup symlink as EXTRA-* (or vice-versa)
-    - Does NOT compare file contents (structural failure means no backup exists)
+    - Does NOT compare contents (structural failure means no backup exists)
 
   Rationale: A symlink replacing a directory is a structural failure--the backup
   tree doesn't contain the actual data. Two symlinks with different targets is
