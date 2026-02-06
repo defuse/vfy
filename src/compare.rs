@@ -17,10 +17,10 @@ use crate::stats::{DiffReasons, Stats};
 enum Meta {
     Error(String),
     Dangling,
-    Special,
+    Special(fs::Metadata),
     File(fs::Metadata),
     Dir(fs::Metadata, Vec<OsString>),
-    Symlink,
+    Symlink(fs::Metadata),
 }
 
 #[derive(Clone, Copy)]
@@ -45,12 +45,14 @@ impl Direction {
             (Direction::Missing, EntryKind::File) => "MISSING-FILE",
             (Direction::Missing, EntryKind::Dir) => "MISSING-DIR",
             (Direction::Missing, EntryKind::Symlink) => "MISSING-SYMLINK",
+            // This is unreachable because dangling symlinks are reported as missing in the call to report() without follow=true.
             (Direction::Missing, EntryKind::Dangling) => "MISSING-SYMLINK",
             (Direction::Missing, EntryKind::Special) => "MISSING-SPECIAL",
             (Direction::Missing, EntryKind::Error) => "MISSING-ERROR",
             (Direction::Extra, EntryKind::File) => "EXTRA-FILE",
             (Direction::Extra, EntryKind::Dir) => "EXTRA-DIR",
             (Direction::Extra, EntryKind::Symlink) => "EXTRA-SYMLINK",
+            // This is unreachable because dangling symlinks are reported as extra in the call to report() without follow=true.
             (Direction::Extra, EntryKind::Dangling) => "EXTRA-SYMLINK",
             (Direction::Extra, EntryKind::Special) => "EXTRA-SPECIAL",
             (Direction::Extra, EntryKind::Error) => "EXTRA-ERROR",
@@ -77,8 +79,8 @@ impl Meta {
         match self {
             Meta::File(_) => EntryKind::File,
             Meta::Dir(_, _) => EntryKind::Dir,
-            Meta::Symlink => EntryKind::Symlink,
-            Meta::Special => EntryKind::Special,
+            Meta::Symlink(_) => EntryKind::Symlink,
+            Meta::Special(_) => EntryKind::Special,
             Meta::Dangling => EntryKind::Dangling,
             Meta::Error(_) => EntryKind::Error,
             //_ => unreachable!("classify called on {:?}", self),
@@ -90,7 +92,7 @@ impl Meta {
     }
 
     fn is_file_dir_or_symlink(&self) -> bool {
-        matches!(self, Meta::File(_) | Meta::Dir(_, _) | Meta::Symlink)
+        matches!(self, Meta::File(_) | Meta::Dir(_, _) | Meta::Symlink(_))
     }
 }
 
@@ -125,7 +127,7 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
 
     // With follow=false, detect symlinks before anything else
     if !follow && ft.is_symlink() {
-        return Meta::Symlink;
+        return Meta::Symlink(meta);
     }
 
     if ft.is_dir() {
@@ -150,14 +152,14 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
                 || ft.is_fifo()
                 || ft.is_socket()
             {
-                Meta::Special
+                Meta::Special(meta)
             } else {
                 Meta::Error(format!("Unknown file type at [{}]", path.display()))
             }
         }
         #[cfg(not(unix))]
         {
-            Meta::Special
+            Meta::Special(meta)
         }
     }
 }
@@ -190,6 +192,42 @@ fn compare(
 
     let meta_orig = load_meta(orig, follow);
     let meta_back = load_meta(backup, follow);
+
+    // --- Check one-filesystem before any processing ---
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let Some(root_dev) = config.original_device {
+            match &meta_orig {
+                Meta::Dir(m, _) | Meta::File(m) | Meta::Symlink(m) | Meta::Special(m) => {
+                    if m.dev() != root_dev {
+                        stats.inc_original_items();
+                        stats.inc_backup_items();
+                        println!("DIFFERENT-FS: [{}]", orig.display());
+                        stats.inc_skipped();
+                        return;
+                    }
+                }
+                // No check for Dangling (already checked with follow=false) or Error
+                Meta::Dangling | Meta::Error(_) => {}
+            }
+        }
+        if let Some(root_dev) = config.backup_device {
+            match &meta_back {
+                Meta::Dir(m, _) | Meta::File(m) | Meta::Symlink(m) | Meta::Special(m) => {
+                    if m.dev() != root_dev {
+                        stats.inc_original_items();
+                        stats.inc_backup_items();
+                        println!("DIFFERENT-FS: [{}]", backup.display());
+                        stats.inc_skipped();
+                        return;
+                    }
+                }
+                // No check for Dangling (already checked with follow=false) or Error
+                Meta::Dangling | Meta::Error(_) => {}
+            }
+        }
+    }
 
     // --- Errors / Dangling ---
     if meta_orig.is_error_or_dangling() {
@@ -227,19 +265,19 @@ fn compare(
     }
 
     // --- Special files ---
-    if matches!(meta_orig, Meta::Special) {
+    if matches!(meta_orig, Meta::Special(_)) {
         stats.inc_original_items();
         println!("SPECIAL-FILE: [{}]", orig.display());
         stats.inc_special_files();
     }
 
-    if matches!(meta_back, Meta::Special) {
+    if matches!(meta_back, Meta::Special(_)) {
         stats.inc_backup_items();
         println!("SPECIAL-FILE: [{}]", backup.display());
         stats.inc_special_files();
     }
 
-    if matches!(meta_orig, Meta::Special) && matches!(meta_back, Meta::Special) {
+    if matches!(meta_orig, Meta::Special(_)) && matches!(meta_back, Meta::Special(_)) {
         return;
     }
 
@@ -262,7 +300,7 @@ fn compare(
             compare_directories(orig, backup, &om, oentries, &bm, bentries, config, stats);
             return;
         }
-        (Meta::Symlink, Meta::Symlink) => {
+        (Meta::Symlink(_), Meta::Symlink(_)) => {
             compare_symlinks(orig, backup, config, stats);
             return;
         }
@@ -273,8 +311,8 @@ fn compare(
     // Error/Dangling/Special sides already counted above.
     // File/Dir/Symlink sides counted by report() below.
 
-    if (matches!(meta_orig, Meta::Symlink) && matches!(meta_back, Meta::File(_) | Meta::Dir(_, _)))
-        || (matches!(meta_back, Meta::Symlink)
+    if (matches!(meta_orig, Meta::Symlink(_)) && matches!(meta_back, Meta::File(_) | Meta::Dir(_, _)))
+        || (matches!(meta_back, Meta::Symlink(_))
             && matches!(meta_orig, Meta::File(_) | Meta::Dir(_, _)))
     {
         println!(
@@ -366,7 +404,7 @@ fn compare_files(
 fn compare_directories(
     orig: &Path,
     backup: &Path,
-    orig_meta: &fs::Metadata,
+    _orig_meta: &fs::Metadata,
     orig_entries: Vec<OsString>,
     _backup_meta: &fs::Metadata,
     backup_entries: Vec<OsString>,
@@ -375,39 +413,6 @@ fn compare_directories(
 ) {
     if config.verbosity >= Verbosity::Dirs {
         println!("DEBUG: Comparing [{}] to [{}]", orig.display(), backup.display());
-    }
-
-    // Check one-filesystem before counting
-    if config.one_filesystem {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::MetadataExt;
-            let parent = orig
-                .parent()
-                .expect("BUG: orig_path inside tree must have a parent");
-            match fs::metadata(parent) {
-                Ok(parent_meta) => {
-                    if orig_meta.dev() != parent_meta.dev() {
-                        stats.inc_original_items();
-                        stats.inc_backup_items();
-                        println!("DIFFERENT-FS: [{}]", orig.display());
-                        stats.inc_skipped();
-                        return;
-                    }
-                }
-                Err(e) => {
-                    stats.inc_original_items();
-                    stats.inc_backup_items();
-                    println!(
-                        "ERROR: Cannot stat parent directory [{}]: {}",
-                        parent.display(),
-                        e
-                    );
-                    stats.inc_errors();
-                    return;
-                }
-            }
-        }
     }
 
     stats.inc_original_items();
@@ -531,6 +536,7 @@ fn report(
     stats: &Stats,
 ) {
     // Check ignore first (before any I/O)
+    // TODO: BUG: if a backup path is specified, this won't work (unless logic elsewhere fixes that up)
     if config.ignore.iter().any(|ig| ig == path) {
         println!("SKIP: [{}]", path.display());
         stats.inc_skipped();
@@ -539,30 +545,36 @@ fn report(
 
     let meta = load_meta(path, follow);
 
-    // Check --one-filesystem before processing directories on different filesystems.
+    // Check --one-filesystem before processing entries on different filesystems.
     // This handles both mount points (follow=false) and resolved symlinks (follow=true).
-    if config.one_filesystem {
-        if let Meta::Dir(dir_meta, _) = &meta {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::MetadataExt;
-                if let Some(parent) = path.parent() {
-                    if let Ok(parent_meta) = fs::metadata(parent) {
-                        if dir_meta.dev() != parent_meta.dev() {
-                            // For mount points (follow=false), report the entry before skipping.
-                            // For resolved symlinks (follow=true), the symlink was already reported.
-                            if !follow {
-                                direction.inc_items(stats);
-                                if print {
-                                    println!("{}: [{}]", direction.prefix(EntryKind::Dir), path.display());
-                                }
-                                direction.inc_count(stats);
-                            }
-                            println!("DIFFERENT-FS: [{}]", path.display());
-                            stats.inc_skipped();
-                            return;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let root_dev = match direction {
+            Direction::Missing => config.original_device,
+            Direction::Extra => config.backup_device,
+        };
+        if let Some(root_dev) = root_dev {
+            let entry_dev = match &meta {
+                Meta::Dir(m, _) | Meta::File(m) | Meta::Symlink(m) | Meta::Special(m) => {
+                    Some(m.dev())
+                }
+                Meta::Dangling | Meta::Error(_) => None,
+            };
+            if let Some(dev) = entry_dev {
+                if dev != root_dev {
+                    // For mount points (follow=false), report the entry before skipping.
+                    // For resolved symlinks (follow=true), the symlink was already reported.
+                    if !follow {
+                        direction.inc_items(stats);
+                        if print {
+                            println!("{}: [{}]", direction.prefix(meta.classify()), path.display());
                         }
+                        direction.inc_count(stats);
                     }
+                    println!("DIFFERENT-FS: [{}]", path.display());
+                    stats.inc_skipped();
+                    return;
                 }
             }
         }
@@ -582,7 +594,7 @@ fn report(
         _ => {}
     }
 
-    if matches!(meta, Meta::Special) {
+    if matches!(meta, Meta::Special(_)) {
         println!("SPECIAL-FILE: [{}]", path.display());
         stats.inc_special_files();
     }
@@ -605,10 +617,10 @@ fn report(
                 report(&path.join(name), direction, false, print_children, config, stats);
             }
         }
-        Meta::Symlink if config.follow => {
+        Meta::Symlink(_) if config.follow => {
             report(path, direction, true, print_children, config, stats);
         }
-        Meta::File(_) | Meta::Symlink  | Meta::Special | Meta::Dangling | Meta::Error(_)  => {}
+        Meta::File(_) | Meta::Symlink(_) | Meta::Special(_) | Meta::Dangling | Meta::Error(_) => {}
         //_ => unreachable!("report: unexpected meta {:?} after classify", meta),
     }
 }

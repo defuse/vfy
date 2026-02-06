@@ -8,6 +8,7 @@ use std::path::{Component, PathBuf};
     arg_required_else_help = true,
     after_help = "\
 WARNING: Output behavior is currently NOT STABLE between releases.
+WARNING: This release has only been tested on Linux.
 
 Verbosity levels:
   (default)  Show differences only. For missing/extra directories, only the
@@ -78,11 +79,12 @@ pub struct Cli {
     #[arg(short, long)]
     pub follow: bool,
 
-    /// Stay on one filesystem
+    /// Stay on one filesystem (only supported on Unix-like OSes)
+    #[cfg(unix)]
     #[arg(short = 'o', long)]
     pub one_filesystem: bool,
 
-    /// Directories to ignore (can be specified multiple times)
+    /// Directories to ignore (can be specified multiple times). Must exist in original or backup.
     #[arg(short, long)]
     pub ignore: Vec<PathBuf>,
 }
@@ -101,8 +103,13 @@ pub struct Config {
     pub samples: u32,
     pub all: bool,
     pub follow: bool,
-    pub one_filesystem: bool,
     pub ignore: Vec<PathBuf>,
+    /// Device ID of the original root directory (for --one-filesystem). Set to enforce staying on the same filesystem.
+    #[cfg(unix)]
+    pub original_device: Option<u64>,
+    /// Device ID of the backup root directory (for --one-filesystem). Set to enforce staying on the same filesystem.
+    #[cfg(unix)]
+    pub backup_device: Option<u64>,
 }
 
 impl Config {
@@ -157,6 +164,21 @@ impl Config {
             eprintln!("Warning: --one-filesystem is not supported on this platform and will be ignored");
         }
 
+        // Get device IDs for --one-filesystem check
+        #[cfg(unix)]
+        let (original_device, backup_device) = if cli.one_filesystem {
+            use std::os::unix::fs::MetadataExt;
+            let orig_dev = std::fs::metadata(&original)
+                .map_err(|e| format!("Cannot stat original directory {:?}: {}", original, e))?
+                .dev();
+            let backup_dev = std::fs::metadata(&backup)
+                .map_err(|e| format!("Cannot stat backup directory {:?}: {}", backup, e))?
+                .dev();
+            (Some(orig_dev), Some(backup_dev))
+        } else {
+            (None, None)
+        };
+
         Ok(Config {
             original,
             backup,
@@ -164,8 +186,11 @@ impl Config {
             samples: cli.samples,
             all: cli.all,
             follow: cli.follow,
-            one_filesystem: cli.one_filesystem,
             ignore,
+            #[cfg(unix)]
+            original_device,
+            #[cfg(unix)]
+            backup_device,
         })
     }
 }

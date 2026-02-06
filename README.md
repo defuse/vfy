@@ -12,7 +12,7 @@ To install, clone the repo and run `cargo install --path .` and make sure
 
 ```
 $ vfy
-CMD: target/debug/vfy
+CMD: vfy
 Verify backup integrity by comparing directory trees
 
 Usage: vfy [OPTIONS] <ORIGINAL> <BACKUP>
@@ -31,6 +31,7 @@ Options:
   -h, --help               Print help
 
 WARNING: Output behavior is currently NOT STABLE between releases.
+WARNING: This release has only been tested on Linux.
 
 Verbosity levels:
   (default)  Show differences only. For missing/extra directories, only the
