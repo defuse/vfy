@@ -635,7 +635,6 @@ fn report(
             report(path, direction, true, print_children, config, stats);
         }
         Meta::File(_) | Meta::Symlink(_) | Meta::Special(_) | Meta::Dangling | Meta::Error(_) => {}
-        //_ => unreachable!("report: unexpected meta {:?} after classify", meta),
     }
 }
 
