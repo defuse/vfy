@@ -62,6 +62,8 @@ case!(unreadable_dir_in_original {
     flags: [],
     lines: [
         "ERROR: noread_dir",
+        // Other side should be reported as skipped.
+        "SKIP: noread_dir"
     ],
     debug_contains: [],
     debug_excludes: [],

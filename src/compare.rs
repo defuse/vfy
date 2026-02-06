@@ -186,6 +186,7 @@ fn compare(
     // Ignore check
     if config.ignore.iter().any(|ig| ig == orig || ig == backup) {
         println!("SKIP: [{}]", orig.display());
+        println!("SKIP: [{}]", backup.display());
         stats.inc_skipped();
         return;
     }
@@ -205,6 +206,9 @@ fn compare(
                         stats.inc_backup_items();
                         println!("DIFFERENT-FS: [{}]", orig.display());
                         stats.inc_skipped();
+                        // When original side is on a different FS, let the user know we skipped reporting the backup side.
+                        println!("SKIP: [{}]", backup.display());
+                        stats.inc_skipped();
                         return;
                     }
                 }
@@ -219,6 +223,9 @@ fn compare(
                         stats.inc_original_items();
                         stats.inc_backup_items();
                         println!("DIFFERENT-FS: [{}]", backup.display());
+                        stats.inc_skipped();
+                        // When backup is on a different FS, let the user know we skipped reporting the original side.
+                        println!("SKIP: [{}]", orig.display());
                         stats.inc_skipped();
                         return;
                     }
@@ -328,7 +335,10 @@ fn compare(
         stats.inc_different();
     }
 
+    // Control falls through when we should report differences.
+
     if meta_orig.is_file_dir_or_symlink() {
+        // Conservatively report everything on the original side as missing.
         // We pass false so that we get a MISSING-SYMLINK *and* MISSING-FILE for resolving symlinks.
         report(orig, Direction::Missing, false, true, config, stats);
     }
@@ -338,6 +348,9 @@ fn compare(
         // Error means we can't verify - don't suggest deletion of potentially valid backup.
         if !matches!(meta_orig, Meta::Error(_)) {
             report(backup, Direction::Extra, false, true, config, stats);
+        } else {
+            // Let the user know we are skipping something, though.
+            println!("SKIP: [{}]", orig.display());
         }
     }
 }

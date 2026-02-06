@@ -195,7 +195,6 @@ impl Config {
     }
 }
 
-/// Make a path absolute and normalize `.` and `..` components without resolving symlinks.
 fn normalize_path(path: &PathBuf) -> PathBuf {
     let mut result = PathBuf::new();
     for component in path.components() {

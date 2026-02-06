@@ -108,10 +108,10 @@ fn case1_different_fs_in_compare_both_sides_symlink() {
         output
     );
 
-    // Check counts: skipped should be 1 (the different-fs entry)
+    // Check counts: skipped should be 2 (DIFFERENT-FS for orig + SKIP for backup)
     assert!(
-        output.contains("Skipped: 1"),
-        "Expected Skipped: 1, got:\n{}",
+        output.contains("Skipped: 2"),
+        "Expected Skipped: 2, got:\n{}",
         output
     );
 }
@@ -656,11 +656,11 @@ fn case13_compare_only_checks_original_not_backup() {
         output
     );
 
-    // Should have Skipped: 1 (the different-fs directory)
+    // Should have Skipped: 2 (DIFFERENT-FS for backup + SKIP for orig)
     let skipped = parse_summary_count(&output, "Skipped:");
     assert_eq!(
-        skipped, 1,
-        "BUG: Expected Skipped: 1 for different-fs backup dir\nOutput:\n{}",
+        skipped, 2,
+        "BUG: Expected Skipped: 2 for different-fs backup dir\nOutput:\n{}",
         output
     );
 
@@ -914,11 +914,11 @@ fn case8_symlink_to_non_dir_on_different_fs_in_compare() {
         output
     );
 
-    // File and symlink-chain should be skipped (2), dangling is an error
+    // File and symlink-chain should be skipped (4: DIFFERENT-FS + SKIP for each)
     let skipped_count = parse_summary_count(&output, "Skipped:");
     assert_eq!(
-        skipped_count, 2,
-        "Expected Skipped: 2 (file + symlink-chain), got Skipped: {}\nOutput:\n{}",
+        skipped_count, 4,
+        "Expected Skipped: 4 (DIFFERENT-FS + SKIP for file and symlink-chain), got Skipped: {}\nOutput:\n{}",
         skipped_count, output
     );
 
@@ -1102,11 +1102,11 @@ fn case10_compare_parent_check_inside_symlink() {
         output
     );
 
-    // Should have 1 skip (the different-fs link)
+    // Should have 2 skips (DIFFERENT-FS for orig link + SKIP for backup link)
     let skipped = parse_summary_count(&output, "Skipped:");
     assert_eq!(
-        skipped, 1,
-        "Expected Skipped: 1 for the different-fs link, got {}.\nOutput:\n{}",
+        skipped, 2,
+        "Expected Skipped: 2 for the different-fs link, got {}.\nOutput:\n{}",
         skipped, output
     );
 
