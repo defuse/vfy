@@ -186,6 +186,7 @@ fn compare(
     // Ignore check
     if config.ignore.iter().any(|ig| ig == orig || ig == backup) {
         println!("SKIP: [{}]", orig.display());
+        stats.inc_skipped();
         println!("SKIP: [{}]", backup.display());
         stats.inc_skipped();
         return;
@@ -350,7 +351,7 @@ fn compare(
             report(backup, Direction::Extra, false, true, config, stats);
         } else {
             // Let the user know we are skipping something, though.
-            println!("SKIP: [{}]", orig.display());
+            println!("SKIP: [{}]", backup.display());
         }
     }
 }

@@ -4,7 +4,7 @@ use std::path::{Component, PathBuf};
 #[derive(Parser, Debug)]
 #[command(
     name = "vfy",
-    about = "Verify backup integrity by comparing directory trees",
+    about = "Verify backup integrity by comparing directory trees. By default, only compares file sizes.",
     arg_required_else_help = true,
     after_help = "\
 WARNING: Output behavior is currently NOT STABLE between releases.
@@ -36,7 +36,7 @@ Output prefixes (grep-friendly):
   SYMLINK-SKIPPED:               Symlink skipped (use --follow to compare resolved content)
   DANGLING-SYMLINK:              Symlink target does not exist (with --follow)
   DIFFERENT-FS:                  Different filesystem skipped (--one-filesystem)
-  SKIP:                          Entry skipped via --ignore
+  SKIP:                          Entry skipped via --ignore or error/FS/type mismatch between sides
   ERROR:                         I/O or permission error
   DEBUG:                         Verbose logging (-v dirs, -vv files and hashes)
   SUMMARY:                       Final counts (not guaranteed to add up to 100%)
@@ -48,7 +48,7 @@ Symlink handling with --follow:
 
   When one side is a symlink and the other is a regular file/directory:
     - Reports DIFFERENT-SYMLINK-STATUS as structural mismatch
-    - Reports original as MISSING-*, backup symlink as EXTRA-*
+    - Reports original as MISSING-*, backup symlink as EXTRA-* (or vice-versa)
     - Does NOT compare contents (structural failure means no backup exists)
 
   Rationale: A symlink replacing a directory is a structural failure--the backup

@@ -575,8 +575,8 @@ fn ignore_symlink_to_file() {
         output
     );
     assert!(
-        output.contains("Skipped: 1"),
-        "Expected Skipped: 1, got:\n{}",
+        output.contains("Skipped: 2"),
+        "Expected Skipped: 2, got:\n{}",
         output
     );
 }
@@ -682,8 +682,8 @@ fn ignore_symlink_to_dir_with_follow() {
         output
     );
     assert!(
-        output.contains("Skipped: 1"),
-        "Expected Skipped: 1, got:\n{}",
+        output.contains("Skipped: 2"),
+        "Expected Skipped: 2, got:\n{}",
         output
     );
     // root(1) + ok.txt(1) = 2 original items (linked is skipped)
@@ -732,8 +732,8 @@ fn ignore_root_directory() {
         output
     );
     assert!(
-        output.contains("Skipped: 1"),
-        "Expected Skipped: 1, got:\n{}",
+        output.contains("Skipped: 2"),
+        "Expected Skipped: 2, got:\n{}",
         output
     );
 }
