@@ -678,6 +678,7 @@ fn compare_file_content(
         let sample_size: u64 = 32;
 
         for _ in 0..config.samples {
+            // TODO: clean this up using saturating_sub according to clippy
             let max_offset = if orig_size > sample_size {
                 orig_size - sample_size
             } else {

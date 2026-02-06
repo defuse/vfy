@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::path::{Component, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -55,7 +55,6 @@ Symlink handling with --follow:
   tree doesn't contain the actual data. Two symlinks with different targets is
   a metadata difference--the resolved data may still be equivalent."
 )]
-
 pub struct Cli {
     /// Original directory
     pub original: PathBuf,
@@ -195,7 +194,7 @@ impl Config {
     }
 }
 
-fn normalize_path(path: &PathBuf) -> PathBuf {
+fn normalize_path(path: &Path) -> PathBuf {
     let mut result = PathBuf::new();
     for component in path.components() {
         match component {
