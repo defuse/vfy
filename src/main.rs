@@ -74,6 +74,7 @@ fn main() {
 
     compare::compare_dirs(&config, &stats);
 
+    println!("COMPARISON FINISHED!");
     stats.print_summary();
 
     if stats.has_differences_or_weirdness() {

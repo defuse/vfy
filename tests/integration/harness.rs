@@ -461,6 +461,9 @@ pub fn is_diagnostic_line(line: &str) -> bool {
     if line.starts_with("CMD:") {
         return false;
     }
+    if line.starts_with("COMPARISON FINISHED!") {
+        return false;
+    }
     // DEBUG lines (verbose output)
     if line.starts_with("DEBUG:") {
         return false;
