@@ -1,6 +1,7 @@
 use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+// Counts are currently not mutually-exclusive, i.e. it won't add up to 100%
 pub struct Stats {
     original_items: AtomicU64,
     backup_items: AtomicU64,
@@ -111,7 +112,7 @@ impl Stats {
         eprintln!("{}", self.format_summary());
     }
 
-    pub fn has_differences(&self) -> bool {
+    pub fn has_differences_or_weirdness(&self) -> bool {
         self.missing.load(Ordering::Relaxed) > 0
             || self.different.load(Ordering::Relaxed) > 0
             || self.extras.load(Ordering::Relaxed) > 0

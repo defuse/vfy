@@ -160,7 +160,7 @@ impl Config {
 
         #[cfg(not(unix))]
         if cli.one_filesystem {
-            eprintln!("Warning: --one-filesystem is not supported on this platform and will be ignored");
+            return Err("--one-filesystem is not supported on this platform".to_string());
         }
 
         // Get device IDs for --one-filesystem check

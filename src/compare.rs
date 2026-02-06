@@ -10,10 +10,8 @@ use rand::Rng;
 use crate::cli::{Config, Verbosity};
 use crate::stats::{DiffReasons, Stats};
 
-// ── Enums ────────────────────────────────────────────────────────────────────
-
 /// Result of loading metadata for a path.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum Meta {
     Error(String),
     Dangling,
@@ -23,43 +21,36 @@ enum Meta {
     Symlink(fs::Metadata),
 }
 
+/// When reporting differences via report(), controls whether we output with
+/// EXTRA- or MISSING- prefixes. Also used to influence behavior in certain
+/// cases.
 #[derive(Clone, Copy)]
 enum Direction {
     Missing,
     Extra,
 }
 
-#[derive(Clone, Copy)]
-enum EntryKind {
-    File,
-    Dir,
-    Symlink,
-    Special,
-    Dangling,
-    Error
-}
-
 impl Direction {
-    fn prefix(self, kind: EntryKind) -> &'static str {
+    fn prefix(self, kind: Meta) -> &'static str {
         match (self, kind) {
-            (Direction::Missing, EntryKind::File) => "MISSING-FILE",
-            (Direction::Missing, EntryKind::Dir) => "MISSING-DIR",
-            (Direction::Missing, EntryKind::Symlink) => "MISSING-SYMLINK",
+            (Direction::Missing, Meta::File(_)) => "MISSING-FILE",
+            (Direction::Missing, Meta::Dir(_, _)) => "MISSING-DIR",
+            (Direction::Missing, Meta::Symlink(_)) => "MISSING-SYMLINK",
             // This is unreachable because dangling symlinks are reported as missing in the call to report() without follow=true.
-            (Direction::Missing, EntryKind::Dangling) => "MISSING-SYMLINK",
-            (Direction::Missing, EntryKind::Special) => "MISSING-SPECIAL",
-            (Direction::Missing, EntryKind::Error) => "MISSING-ERROR",
-            (Direction::Extra, EntryKind::File) => "EXTRA-FILE",
-            (Direction::Extra, EntryKind::Dir) => "EXTRA-DIR",
-            (Direction::Extra, EntryKind::Symlink) => "EXTRA-SYMLINK",
+            (Direction::Missing, Meta::Dangling) => "MISSING-SYMLINK",
+            (Direction::Missing, Meta::Special(_)) => "MISSING-SPECIAL",
+            (Direction::Missing, Meta::Error(_)) => "MISSING-ERROR",
+            (Direction::Extra, Meta::File(_)) => "EXTRA-FILE",
+            (Direction::Extra, Meta::Dir(_, _)) => "EXTRA-DIR",
+            (Direction::Extra, Meta::Symlink(_)) => "EXTRA-SYMLINK",
             // This is unreachable because dangling symlinks are reported as extra in the call to report() without follow=true.
-            (Direction::Extra, EntryKind::Dangling) => "EXTRA-SYMLINK",
-            (Direction::Extra, EntryKind::Special) => "EXTRA-SPECIAL",
-            (Direction::Extra, EntryKind::Error) => "EXTRA-ERROR",
+            (Direction::Extra, Meta::Dangling) => "EXTRA-SYMLINK",
+            (Direction::Extra, Meta::Special(_)) => "EXTRA-SPECIAL",
+            (Direction::Extra, Meta::Error(_)) => "EXTRA-ERROR",
         }
     }
 
-    fn inc_count(self, stats: &Stats) {
+    fn inc_missing_or_extra_count(self, stats: &Stats) {
         match self {
             Direction::Missing => stats.inc_missing(),
             Direction::Extra => stats.inc_extras(),
@@ -75,18 +66,6 @@ impl Direction {
 }
 
 impl Meta {
-    fn classify(&self) -> EntryKind {
-        match self {
-            Meta::File(_) => EntryKind::File,
-            Meta::Dir(_, _) => EntryKind::Dir,
-            Meta::Symlink(_) => EntryKind::Symlink,
-            Meta::Special(_) => EntryKind::Special,
-            Meta::Dangling => EntryKind::Dangling,
-            Meta::Error(_) => EntryKind::Error,
-            //_ => unreachable!("classify called on {:?}", self),
-        }
-    }
-
     fn is_error_or_dangling(&self) -> bool {
         matches!(self, Meta::Error(_) | Meta::Dangling)
     }
@@ -98,7 +77,7 @@ impl Meta {
 
 // ── Metadata loading ─────────────────────────────────────────────────────────
 
-/// Load metadata for a path. All I/O happens here.
+/// Load metadata for a path.
 ///
 /// `follow=false`: uses symlink_metadata (default), symlinks returned as Meta::Symlink
 /// `follow=true`: uses metadata (follows symlinks), returns Dangling if target doesn't exist
@@ -111,14 +90,14 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
             Ok(m) => m,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Meta::Dangling,
             Err(e) => {
-                return Meta::Error(format!("Cannot stat [{}]: {}", path.display(), e));
+                return Meta::Error(format!("Cannot read metadata for [{}]: {}", path.display(), e));
             }
         }
     } else {
         match fs::symlink_metadata(path) {
             Ok(m) => m,
             Err(e) => {
-                return Meta::Error(format!("Cannot stat [{}]: {}", path.display(), e));
+                return Meta::Error(format!("Cannot read metadata for [{}]: {}", path.display(), e));
             }
         }
     };
@@ -126,6 +105,7 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
     let ft = meta.file_type();
 
     // With follow=false, detect symlinks before anything else
+    assert!(!(follow & ft.is_symlink()));
     if !follow && ft.is_symlink() {
         return Meta::Symlink(meta);
     }
@@ -159,20 +139,28 @@ fn load_meta(path: &Path, follow: bool) -> Meta {
         }
         #[cfg(not(unix))]
         {
-            Meta::Special(meta)
+            // For now, return an error so misbehavior on unsupported non-Unix
+            // OSes is more obvious to the user.
+            Meta::Error(format!("Unknown file type at [{}]", path.display()))
+            // TODO: Meta::Special(meta), once we understand non-Unix behavior.
         }
     }
 }
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
+/// Compare directories according to the provided Config.
+/// Populates stats with counts and prints log messages to stdout.
 pub fn compare_dirs(config: &Config, stats: &Stats) {
     compare(&config.original, &config.backup, false, config, stats);
 }
 
-// ── compare ──────────────────────────────────────────────────────────────────
+// ── Comparison ───────────────────────────────────────────────────────────────
 
 /// Compare two paths at the same relative position in both trees.
+///
+/// orig, backup, and ignore paths in the Config MUST be absolute paths for
+/// ignore comparisons to work properly.
 ///
 /// Pre: Neither path counted as an item yet.
 /// Post: Both counted. Fully categorized. Descendants processed.
@@ -183,7 +171,7 @@ fn compare(
     config: &Config,
     stats: &Stats,
 ) {
-    // Ignore check
+    // Check ignore first so we don't encounter errors, different fs, or special files that the user ignored.
     if config.ignore.iter().any(|ig| ig == orig || ig == backup) {
         println!("SKIP: [{}]", orig.display());
         stats.inc_skipped();
@@ -582,9 +570,9 @@ fn report(
                     if !follow {
                         direction.inc_items(stats);
                         if print {
-                            println!("{}: [{}]", direction.prefix(meta.classify()), path.display());
+                            println!("{}: [{}]", direction.prefix(meta), path.display());
                         }
-                        direction.inc_count(stats);
+                        direction.inc_missing_or_extra_count(stats);
                     }
                     println!("DIFFERENT-FS: [{}]", path.display());
                     stats.inc_skipped();
@@ -613,14 +601,13 @@ fn report(
         stats.inc_special_files();
     }
 
-    let kind = meta.classify();
     // If we have a dangling symlink, it's already been reported as MISSING-SYMLINK by the report() one stack level up.
     // To ensure correctness, we need to verify that *other* callers of report are always using follow=false.
     if !matches!(meta, Meta::Dangling) {
         if print {
-            println!("{}: [{}]", direction.prefix(kind), path.display());
+            println!("{}: [{}]", direction.prefix(meta.clone()), path.display());
         }
-        direction.inc_count(stats);
+        direction.inc_missing_or_extra_count(stats);
     }
 
     let print_children = config.verbosity >= Verbosity::Files;
@@ -643,18 +630,18 @@ fn report(
 enum FileCompareResult {
     Same,
     Different(DiffReasons),
-    /// Original file failed to read; error already reported via `inc_errors`.
-    /// Caller should count backup as extra.
+    /// Original file failed to read. Error has already been reported and counted.
     OrigError,
-    /// Backup file failed to read; error already reported via `inc_errors`.
-    /// Caller should count original as missing.
+    /// Backup file failed to read. Error has already been reported and counted.
     BackupError,
-    /// Both files failed to read; errors already reported via `inc_errors`.
-    /// Nothing more to count.
+    /// Both files failed to read. Error has already been reported and counted.
     BothError,
 }
 
-/// Compare two files by content. Reports errors for each side independently.
+/// Compare two files by content. 
+///
+/// Reports errors for each side independently so that an error on one side
+/// doesn't hide an error on the other side.
 fn compare_file_content(
     orig: &Path,
     backup: &Path,
@@ -792,6 +779,8 @@ fn read_dir_entries(dir: &Path) -> Result<Vec<OsString>, std::io::Error> {
     Ok(entries)
 }
 
+/// The caller must ensure offset + len <= file size, otherwise hitting an EOF
+/// will cause an error to be returned.
 fn read_sample(path: &Path, offset: u64, len: usize) -> std::io::Result<Vec<u8>> {
     let mut file = fs::File::open(path)?;
     file.seek(SeekFrom::Start(offset))?;

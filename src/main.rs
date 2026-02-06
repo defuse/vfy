@@ -76,7 +76,7 @@ fn main() {
 
     stats.print_summary();
 
-    if stats.has_differences() {
+    if stats.has_differences_or_weirdness() {
         process::exit(1);
     }
 }
