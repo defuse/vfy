@@ -7,8 +7,9 @@ use std::path::{Component, Path, PathBuf};
     about = "Verify backup integrity by comparing directory trees. By default, only compares file sizes.",
     arg_required_else_help = true,
     after_help = "\
+WARNING: By default, it only compares by file size; files themselves are not read.
+WARNING: Only officially supported on Linux, but seems to work on Windows/Mac.
 WARNING: Output behavior is currently NOT STABLE between releases.
-WARNING: This release has only been tested on Linux.
 
 Verbosity levels:
   (default)  Show differences only. For missing/extra directories, only the
