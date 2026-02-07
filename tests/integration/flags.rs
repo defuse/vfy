@@ -864,6 +864,55 @@ fn ignore_path_through_symlinked_root_errors() {
     let _ = std::fs::remove_dir_all(&tmp);
 }
 
+// Reproduces the macOS /var -> /private/var bug on Linux:
+// When the temp directory path goes through a symlink, canonicalize()
+// resolves it for orig/backup roots but normalize_path() doesn't for
+// --ignore paths, so the starts_with check fails.
+#[test]
+fn ignore_fails_when_tempdir_behind_symlink() {
+    let tmp = std::env::temp_dir().join("bv_test_ignore_symlink_tmpdir");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let real = tmp.join("real");
+    std::fs::create_dir_all(real.join("a").join("sub")).unwrap();
+    std::fs::create_dir_all(real.join("b").join("sub")).unwrap();
+    std::fs::write(real.join("a").join("sub").join("f.txt"), "a\n").unwrap();
+    std::fs::write(real.join("b").join("sub").join("f.txt"), "a\n").unwrap();
+
+    // Symlink: tmp/link -> tmp/real (simulates /var -> /private/var)
+    let link = tmp.join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    // Pass roots through the symlink — canonicalize() will resolve to real/
+    let a_via_link = link.join("a").to_str().unwrap().to_string();
+    let b_via_link = link.join("b").to_str().unwrap().to_string();
+    // Ignore path also through the symlink — normalize_path() won't resolve it
+    let ignore_via_link = link.join("a").join("sub").to_str().unwrap().to_string();
+
+    // Should succeed: the ignore path IS within the original tree.
+    // Currently fails because canonicalize resolves the symlink for roots
+    // while normalize_path leaves it unresolved for ignore paths.
+    // On macOS this happens naturally because /var -> /private/var.
+    let assert = cmd()
+        .args([&a_via_link, &b_via_link, "-i", &ignore_via_link])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    // sub/ should be ignored, not reported as missing or similar
+    assert!(
+        some_line_has(&output, "SKIP:", "sub"),
+        "sub should be skipped via --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "MISSING", "sub"),
+        "sub should not be reported as missing, got:\n{}",
+        output
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
 // ── --ignore with relative paths (exercises normalize_path) ──
 
 #[test]
