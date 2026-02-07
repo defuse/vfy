@@ -93,4 +93,6 @@ are not officially supported, but it builds and seems to work fine.
 
 **AI Use Policy:** AI tools were used to assist with writing this utility. All
 code in the core utility has been fully reviewed, and rewritten for clarity when
-necessary, by myself (a human).
+necessary, by myself (a human). If you would like to submit a PR, using AI is
+fine, but you must stand by the correctness of your submission as strongly as
+you would if you had written the code yourself.
