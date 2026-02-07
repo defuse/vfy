@@ -135,7 +135,7 @@ impl Config {
         //   - If the user compares to a/ (real dir) to b/ (symlink), we don't
         //     want that to be immediately reported as a difference.
         //   - For same-filesystem detection, we need to know where the root
-        //     really is, i.e. that b/ symlink could be on a different device
+        //     really is, i.e. the b/ symlink could be on a different device
         //     than its actual contents.
         //   - We can warn the user when they are comparing a directory to
         //     itself in a way that "sees through" different ways of arriving
@@ -152,45 +152,46 @@ impl Config {
         // This means we do have to canonicalize *part* of the ignore path.
         // For example, if the user does...
         //
-        //      original:   /a/this_is_a_symlink/original
-        //          where /a/this_is_a_symlink -> a/actual_original
-        //      ignore: /a/this_is_a_symlink/original/x
+        //      original:   /a/this_is_a_symlink/
+        //          where /a/this_is_a_symlink -> /a/actual_original
+        //      ignore: /a/this_is_a_symlink/x
         //
         //  ...then the original path gets canonicalized to /a/actual_original
-        //  but then an ignore path of /a/this_is_a_symlink/original/x will not
-        //  match anything.
+        //  but then an ignore path of /a/this_is_a_symlink/x will not match
+        //  anything.
         //
         //  But we cannot canonicalize the *entire* --ignore path, because "x"
-        //  could be a symlink to /other, so /a/this_is_a_symlink/original/x
-        //  would get canonicalized to /other and again, nothing would be
-        //  ignored.
+        //  could be a symlink to /other, so /a/this_is_a_symlink/x would get
+        //  canonicalized to /other and again, nothing would be ignored.
         //
         // So, we:
         //
-        //  1. Make the roots absolute and *normalize*.
+        //  1. Make the roots absolute and *normalize* (not canonicalize).
         //  2. Make the ignore paths absolute and *normalize* them.
         //  3. Make sure each ignore path has a prefix which is one of the roots
         //     as typed or their canonicalizations.
         //  4. Strip off that prefix, and suffix what's left to the canonicalized root.
+        //  5. Use the canonicalized roots and ignore paths with canonicalized
+        //     root prefixes.
         //
         // This has the property that users must type the ignore path "the same
         // way" as they type the root paths OR the same way as the canonical
-        // path. In other words, they cannot ignore something by providing a
-        // path inside one of the roots that gets there a different way through
-        // symlinks. If the user did that, the code below will report that the
-        // ignore path is not within one of the roots.
+        // root paths. In other words, they cannot ignore something by providing
+        // a path inside one of the roots that gets there a different way
+        // through symlinks. If the user did that, the code below will report
+        // that the ignore path is not within one of the roots.
         //
         // Also, if a user ignores original/x and x is a symlink to original/y,
         // then with --follow only original/x gets ignored, not original/y.
         //
-        // Ignored paths are ALWAYS relative to the cwd, not relative to the
-        // roots as is common in other backup tools. There is some potential for
-        // confusion: if the user assumes the ignore paths are relative to the
-        // root, and their cwd is deep inside a root, a path fragment collision
-        // could lead to the wrong thing being ignored. But this seems unlikely.
-        // If the cwd is one of the roots and the user assumes the path is
-        // relative to the roots, then it "accidentally" works like the user
-        // expects.
+        // Relative Ignored paths are ALWAYS relative to the cwd, not relative
+        // to the roots as is common in other backup tools. There is some
+        // potential for confusion: if the user assumes the ignore paths are
+        // relative to the root and their cwd is deep inside a root, a path
+        // fragment collision could lead to the wrong thing being ignored. But
+        // this seems unlikely. If the cwd is one of the roots and the user
+        // assumes the path is relative to the roots, then it "accidentally"
+        // works like the user expects.
         //
 
         // Utility for making paths absolute and normalized (without canonicalizing).

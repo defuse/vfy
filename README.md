@@ -73,23 +73,22 @@ Output prefixes (grep-friendly):
 
 Symlink handling with --follow:
   When both sides are symlinks with different targets:
-    - Reports DIFFERENT-SYMLINK-TARGET as a warning
-    - Continues comparing resolved contents (may find similarities)
+    - Reports DIFFERENT-SYMLINK-TARGET as a warning.
+    - Continues comparing resolved contents (may find similarities).
 
   When one side is a symlink and the other is a regular file/directory:
-    - Reports DIFFERENT-SYMLINK-STATUS as structural mismatch
-    - Reports original as MISSING-*, backup symlink as EXTRA-* (or vice-versa)
-    - Does NOT compare contents (structural failure means no backup exists)
-
-  Rationale: A symlink replacing a directory is a structural failure--the backup
-  tree doesn't contain the actual data. Two symlinks with different targets is
-  a metadata difference--the resolved data may still be equivalent.
+    - Reports DIFFERENT-SYMLINK-STATUS for the type mismatch.
+    - Reports original as MISSING-*, backup symlink as EXTRA-* (or vice-versa).
+    - Does NOT compare contents (rationale: a backup directory which only
+      contains a symlink to files that are actually in the original should
+      probably not be considered a correct backup.)
 ```
 
 Note: The `--one-filesystem` tests assume your development environment is a
-Linux system with `/dev/shm/` writable. Most of the tests are broken on Windows
-due to the use of a Unix-specific filesystem library. As such, those platforms
-are not officially supported, but it builds and seems to work fine.
+Linux system with `/dev/shm/` writable; they fail on Windows/Mac. Most of the
+other tests are broken on Windows as well due to the use of a Unix-specific
+filesystem library. As such, those platforms are not officially supported, but
+it builds and seems to work fine.
 
 **AI Use Policy:** AI tools were used to assist with writing this utility. All
 code in the core utility has been fully reviewed, and rewritten for clarity when
