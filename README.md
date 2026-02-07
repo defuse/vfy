@@ -27,7 +27,7 @@ Options:
   -a, --all                Full BLAKE3 hash comparison
   -f, --follow             Compare symlinked-to contents (symlink target paths are always compared, even without --follow)
   -o, --one-filesystem     Stay on one filesystem (only supported on Unix-like OSes)
-  -i, --ignore <IGNORE>    Directories to ignore (can be specified multiple times). Must exist in original or backup
+  -i, --ignore <IGNORE>    Ignore one directory or file. Must exist. Ignoring one side also ignores the other.
   -h, --help               Print help
 
 WARNING: Output behavior is currently NOT STABLE between releases.

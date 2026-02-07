@@ -83,8 +83,8 @@ pub struct Cli {
     #[arg(short = 'o', long)]
     pub one_filesystem: bool,
 
-    /// Directories to ignore (one --ignore for each). Ignoring one side also ignores the other.
-    #[arg(short, long)]
+    /// Ignore one directory or file. Must exist. Ignoring one side also ignores the other.
+    #[arg(short, long, verbatim_doc_comment)] // verbatim so it doesn't strip the period!
     pub ignore: Vec<PathBuf>,
 }
 
