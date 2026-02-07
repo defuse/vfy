@@ -934,10 +934,13 @@ fn ignore_canonical_form_when_root_typed_through_symlink() {
     let link = tmp.join("link");
     std::os::unix::fs::symlink(&real, &link).unwrap();
 
-    // Roots through symlink, but ignore via the REAL (canonical) path
+    // Roots through symlink, but ignore via the truly canonical path.
+    // Must canonicalize real/ because on macOS /tmp itself is a symlink
+    // to /private/tmp, so real/ alone isn't fully canonical.
     let a_via_link = link.join("a").to_str().unwrap().to_string();
     let b_via_link = link.join("b").to_str().unwrap().to_string();
-    let ignore_via_real = real.join("a").join("sub").to_str().unwrap().to_string();
+    let real_canonical = real.canonicalize().unwrap();
+    let ignore_via_real = real_canonical.join("a").join("sub").to_str().unwrap().to_string();
 
     let assert = cmd()
         .args([&a_via_link, &b_via_link, "-i", &ignore_via_real])
