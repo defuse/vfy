@@ -833,11 +833,11 @@ fn ignore_symlink_skips_symlink_but_not_target_dir() {
 }
 
 #[test]
-fn ignore_path_through_symlinked_root_errors() {
-    // If the path to the original/backup root goes through a symlink,
-    // canonicalize resolves it but normalize_path doesn't. An --ignore path
-    // specified via the unresolved root won't match the canonicalized root,
-    // producing a clear error.
+fn ignore_path_through_symlinked_root_works() {
+    // Roots and --ignore path all go through a symlink alias.
+    // canonicalize() resolves the roots but the ignore path is normalized
+    // against the as-typed root, so strip_prefix works and the suffix is
+    // rejoined onto the canonical root.
     let tmp = std::env::temp_dir().join("bv_test_ignore_symlinked_root");
     let _ = std::fs::remove_dir_all(&tmp);
     let real_dir = tmp.join("real");
@@ -850,16 +850,22 @@ fn ignore_path_through_symlinked_root_errors() {
     let alias = tmp.join("alias");
     std::os::unix::fs::symlink(&real_dir, &alias).unwrap();
 
-    // Pass roots via the symlink alias, but --ignore via the alias too
+    // Pass roots and --ignore all via the symlink alias
     let a_str = alias.join("a").to_str().unwrap().to_string();
     let b_str = alias.join("b").to_str().unwrap().to_string();
     let ignore_path = alias.join("a").join("sub").to_str().unwrap().to_string();
 
-    cmd()
+    let assert = cmd()
         .args([&a_str, &b_str, "-i", &ignore_path])
         .assert()
-        .code(2)
-        .stderr(predicate::str::contains("not within"));
+        .success();
+    let output = stdout_of(&assert);
+
+    assert!(
+        some_line_has(&output, "SKIP:", "sub"),
+        "sub should be skipped via --ignore, got:\n{}",
+        output
+    );
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
@@ -907,6 +913,163 @@ fn ignore_fails_when_tempdir_behind_symlink() {
     assert!(
         !some_line_has(&output, "MISSING", "sub"),
         "sub should not be reported as missing, got:\n{}",
+        output
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn ignore_canonical_form_when_root_typed_through_symlink() {
+    // Root typed through symlink, but ignore path uses the canonical/resolved form.
+    // Exercises the fallback strip_prefix(&original) branch.
+    let tmp = std::env::temp_dir().join("bv_test_ignore_canonical_form");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let real = tmp.join("real");
+    std::fs::create_dir_all(real.join("a").join("sub")).unwrap();
+    std::fs::create_dir_all(real.join("b").join("sub")).unwrap();
+    std::fs::write(real.join("a").join("sub").join("f.txt"), "a\n").unwrap();
+    std::fs::write(real.join("b").join("sub").join("f.txt"), "a\n").unwrap();
+
+    let link = tmp.join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    // Roots through symlink, but ignore via the REAL (canonical) path
+    let a_via_link = link.join("a").to_str().unwrap().to_string();
+    let b_via_link = link.join("b").to_str().unwrap().to_string();
+    let ignore_via_real = real.join("a").join("sub").to_str().unwrap().to_string();
+
+    let assert = cmd()
+        .args([&a_via_link, &b_via_link, "-i", &ignore_via_real])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    assert!(
+        some_line_has(&output, "SKIP:", "sub"),
+        "sub should be skipped via canonical --ignore path, got:\n{}",
+        output
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn ignore_through_different_symlink_alias_errors() {
+    // Root typed through one symlink, ignore through a different symlink to
+    // the same place. This should error — we can't resolve arbitrary aliases.
+    let tmp = std::env::temp_dir().join("bv_test_ignore_third_alias");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let real = tmp.join("real");
+    std::fs::create_dir_all(real.join("a").join("sub")).unwrap();
+    std::fs::create_dir_all(real.join("b").join("sub")).unwrap();
+    std::fs::write(real.join("a").join("sub").join("f.txt"), "a\n").unwrap();
+    std::fs::write(real.join("b").join("sub").join("f.txt"), "a\n").unwrap();
+
+    let link1 = tmp.join("link1");
+    let link2 = tmp.join("link2");
+    std::os::unix::fs::symlink(&real, &link1).unwrap();
+    std::os::unix::fs::symlink(&real, &link2).unwrap();
+
+    // Roots through link1, ignore through link2
+    let a_str = link1.join("a").to_str().unwrap().to_string();
+    let b_str = link1.join("b").to_str().unwrap().to_string();
+    let ignore_path = link2.join("a").join("sub").to_str().unwrap().to_string();
+
+    cmd()
+        .args([&a_str, &b_str, "-i", &ignore_path])
+        .assert()
+        .code(2)
+        .stderr(predicate::str::contains("not within"));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn ignore_symlink_with_follow_does_not_ignore_target() {
+    // Ignoring symlink "thelink" should NOT also ignore its target "realdir"
+    // with --follow. Both sides have realdir/ with differing content.
+    // --ignore original/thelink with --follow: thelink is skipped, realdir
+    // is still compared.
+    let tmp = std::env::temp_dir().join("bv_test_ign_link_not_tgt");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(a.join("realdir")).unwrap();
+    std::fs::create_dir_all(b.join("realdir")).unwrap();
+
+    std::fs::write(a.join("realdir").join("file.txt"), "original\n").unwrap();
+    std::fs::write(b.join("realdir").join("file.txt"), "different content\n").unwrap();
+
+    // thelink -> realdir in both sides
+    std::os::unix::fs::symlink("realdir", a.join("thelink")).unwrap();
+    std::os::unix::fs::symlink("realdir", b.join("thelink")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let ignore_path = a.join("thelink").to_str().unwrap().to_string();
+
+    let assert = cmd()
+        .args([&a_str, &b_str, "--follow", "-i", &ignore_path])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    // thelink should be skipped
+    assert!(
+        some_line_has(&output, "SKIP:", "thelink"),
+        "thelink should be skipped via --ignore, got:\n{}",
+        output
+    );
+    // realdir should NOT be skipped — it's the target, not the ignored path
+    assert!(
+        !some_line_has(&output, "SKIP:", "realdir"),
+        "realdir should NOT be skipped (only thelink is ignored), got:\n{}",
+        output
+    );
+    // realdir/file.txt should still show a difference
+    assert!(
+        some_line_has(&output, "DIFFERENT-FILE", "file.txt"),
+        "realdir/file.txt should still be compared and differ, got:\n{}",
+        output
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
+fn ignore_dangling_symlink() {
+    // Ignoring a dangling symlink (target doesn't exist) should work.
+    // The symlink itself exists, so the existence check passes.
+    let tmp = std::env::temp_dir().join("bv_test_ignore_dangling");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let a = tmp.join("a");
+    let b = tmp.join("b");
+    std::fs::create_dir_all(&a).unwrap();
+    std::fs::create_dir_all(&b).unwrap();
+
+    // Dangling symlinks in both sides (target doesn't exist)
+    std::os::unix::fs::symlink("nonexistent_target", a.join("dangling")).unwrap();
+    std::os::unix::fs::symlink("nonexistent_target", b.join("dangling")).unwrap();
+
+    let a_str = a.to_str().unwrap().to_string();
+    let b_str = b.to_str().unwrap().to_string();
+    let ignore_path = a.join("dangling").to_str().unwrap().to_string();
+
+    let assert = cmd()
+        .args([&a_str, &b_str, "-i", &ignore_path])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    assert!(
+        some_line_has(&output, "SKIP:", "dangling"),
+        "dangling symlink should be skipped via --ignore, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "DANGLING", "dangling"),
+        "dangling symlink should not be reported as dangling (it's ignored), got:\n{}",
         output
     );
 

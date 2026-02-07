@@ -83,7 +83,7 @@ pub struct Cli {
     #[arg(short = 'o', long)]
     pub one_filesystem: bool,
 
-    /// Directories to ignore (can be specified multiple times). Must exist in original or backup.
+    /// Directories to ignore (one --ignore for each). Ignoring one side also ignores the other.
     #[arg(short, long)]
     pub ignore: Vec<PathBuf>,
 }
@@ -128,34 +128,121 @@ impl Config {
         };
 
         // Validate --ignore paths: must exist and be within original or backup tree.
-        // We must NOT resolve symlinks in the path — compare_recursive builds paths
-        // by joining readdir names, so symlink directory names stay unresolved.
-        // Strategy: make the path absolute (prepend cwd if relative), normalize
-        // . and .. components, verify it exists, and check it's within the tree.
+        //
+        // We canonicalize the original and backup roots because:
+        //
+        //   - If the user compares to a/ (real dir) to b/ (symlink), we don't
+        //     want that to be immediately reported as a difference.
+        //   - For same-filesystem detection, we need to know where the root
+        //     really is, i.e. that b/ symlink could be on a different device
+        //     than its actual contents.
+        //   - We can warn the user when they are comparing a directory to
+        //     itself in a way that "sees through" different ways of arriving
+        //     at the same actual path through symlinks.
+        //   - Log messages contain the canonical paths of everything being
+        //     compared, helping the user notice if what they are comparing is
+        //     not what they expected due to symlink resolution.
+        //
+        // The ignore paths we provide to compare() must match what
+        // compare_recursive walks, which is:
+        //
+        //      the canonicalized root / readdir entry names
+        //
+        // This means we do have to canonicalize *part* of the ignore path.
+        // For example, if the user does...
+        //
+        //      original:   /a/this_is_a_symlink/original
+        //          where /a/this_is_a_symlink -> a/actual_original
+        //      ignore: /a/this_is_a_symlink/original/x
+        //
+        //  ...then the original path gets canonicalized to /a/actual_original
+        //  but then an ignore path of /a/this_is_a_symlink/original/x will not
+        //  match anything.
+        //
+        //  But we cannot canonicalize the *entire* --ignore path, because "x"
+        //  could be a symlink to /other, so /a/this_is_a_symlink/original/x
+        //  would get canonicalized to /other and again, nothing would be
+        //  ignored.
+        //
+        // So, we:
+        //
+        //  1. Make the roots absolute and *normalize*.
+        //  2. Make the ignore paths absolute and *normalize* them.
+        //  3. Make sure each ignore path has a prefix which is one of the roots
+        //     as typed or their canonicalizations.
+        //  4. Strip off that prefix, and suffix what's left to the canonicalized root.
+        //
+        // This has the property that users must type the ignore path "the same
+        // way" as they type the root paths OR the same way as the canonical
+        // path. In other words, they cannot ignore something by providing a
+        // path inside one of the roots that gets there a different way through
+        // symlinks. If the user did that, the code below will report that the
+        // ignore path is not within one of the roots.
+        //
+        // Also, if a user ignores original/x and x is a symlink to original/y,
+        // then with --follow only original/x gets ignored, not original/y.
+        //
+        // Ignored paths are ALWAYS relative to the cwd, not relative to the
+        // roots as is common in other backup tools. There is some potential for
+        // confusion: if the user assumes the ignore paths are relative to the
+        // root, and their cwd is deep inside a root, a path fragment collision
+        // could lead to the wrong thing being ignored. But this seems unlikely.
+        // If the cwd is one of the roots and the user assumes the path is
+        // relative to the roots, then it "accidentally" works like the user
+        // expects.
+        //
+
+        // Utility for making paths absolute and normalized (without canonicalizing).
+        let cwd = std::env::current_dir()
+            .map_err(|e| format!("Cannot get current directory: {}", e))?;
+        let make_absolute_and_normalized = |p: &Path| -> PathBuf {
+            if p.is_absolute() { normalize_path(p) } else { normalize_path(&cwd.join(p)) }
+        };
+
+        let orig_as_typed = make_absolute_and_normalized(&cli.original);
+        let backup_as_typed = make_absolute_and_normalized(&cli.backup);
+
         let mut ignore = Vec::new();
+
         for p in &cli.ignore {
-            let abs = if p.is_absolute() {
-                p.clone()
-            } else {
-                std::env::current_dir()
-                    .map_err(|e| format!("Cannot get current directory: {}", e))?
-                    .join(p)
-            };
-            let resolved = normalize_path(&abs);
-            // Verify the entry itself exists (the symlink or file, not its target)
-            if resolved.symlink_metadata().is_err() {
+            let normed = make_absolute_and_normalized(p);
+
+            // Verify the ignored path exists (if a symlink, the symlink itself, not its target)
+            if normed.symlink_metadata().is_err() {
                 return Err(format!(
                     "Ignore path {:?} does not exist or cannot be resolved: No such file or directory",
                     p
                 ));
             }
-            if !resolved.starts_with(&original) && !resolved.starts_with(&backup) {
+
+            // We don't check if ignored symlinks' targets exist, since the user
+            // may intentionally be ignoring a dangling symlink.
+
+            // Extract the within-tree suffix by stripping the root prefix.
+            // Try the as-typed roots first (handles symlinks above the root),
+            // then canonical roots (handles user typing the resolved path).
+            // Rejoin suffix onto canonical root so it matches walked paths.
+
+            // There are four allowed cases:
+            // 1. The absolute ignore path starts with the user-specified original path.
+            let stored = if let Ok(suffix) = normed.strip_prefix(&orig_as_typed) {
+                original.join(suffix)
+            // 2. The absolute ignore path starts with the canonicalized original path.
+            } else if let Ok(suffix) = normed.strip_prefix(&original) {
+                original.join(suffix)
+            // 3. The absolute ignore path starts with the user-specified backup path.
+            } else if let Ok(suffix) = normed.strip_prefix(&backup_as_typed) {
+                backup.join(suffix)
+            // 4. The absolute ignore path starts with the canonicalized backup path.
+            } else if let Ok(suffix) = normed.strip_prefix(&backup) {
+                backup.join(suffix)
+            } else {
                 return Err(format!(
                     "Ignore path {:?} is not within the original ({:?}) or backup ({:?}) directory",
-                    resolved, original, backup
+                    normed, original, backup
                 ));
-            }
-            ignore.push(resolved);
+            };
+            ignore.push(stored);
         }
 
         // Get device IDs for --one-filesystem check
