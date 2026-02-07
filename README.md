@@ -7,8 +7,14 @@ By default, it compares only by file size, but it also supports checking random
 samples within files (with `--samples N`) or full BLAKE3 hash-based comparison
 (with `--all`).
 
-To install, clone the repo and run `cargo install --path .` and make sure
-`~/.cargo/bin` is in your `$PATH`.
+To install `vfy`, run...
+
+```
+cargo install vfy
+```
+
+...and make sure `~/.cargo/bin` is in your `$PATH`. You can also clone the
+repository and run `cargo install --path .`
 
 ```
 $ vfy
