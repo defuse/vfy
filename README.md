@@ -91,4 +91,6 @@ Linux system with `/dev/shm/` writable. Most of the tests are broken on Windows
 due to the use of a Unix-specific filesystem library. As such, those platforms
 are not officially supported, but it builds and seems to work fine.
 
-**AI Use Disclosure:** This tool was developed with the aid of claude code.
+**AI Use Policy:** AI tools were used to assist with writing this utility. All
+code in the core utility has been fully reviewed, and rewritten for clarity when
+necessary, by myself (a human).
