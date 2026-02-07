@@ -2,6 +2,13 @@
 name = "vfy"
 version = "0.1.0"
 edition = "2021"
+description = "Verify backup integrity by comparing directory trees"
+license = "MIT"
+repository = "https://github.com/defuse/vfy"
+homepage = "https://defuse.ca/"
+readme = "README.md"
+keywords = ["backup", "verify", "integrity", "compare", "filesystem"]
+categories = ["command-line-utilities", "filesystem"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

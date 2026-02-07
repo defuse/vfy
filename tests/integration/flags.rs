@@ -958,6 +958,41 @@ fn ignore_canonical_form_when_root_typed_through_symlink() {
 }
 
 #[test]
+fn ignore_canonical_form_backup_side_when_root_typed_through_symlink() {
+    // Same as ignore_canonical_form_when_root_typed_through_symlink but for
+    // the backup side. Exercises strip_prefix(&backup) (branch 4).
+    let tmp = std::env::temp_dir().join("bv_test_ignore_canonical_backup");
+    let _ = std::fs::remove_dir_all(&tmp);
+    let real = tmp.join("real");
+    std::fs::create_dir_all(real.join("a")).unwrap();
+    std::fs::create_dir_all(real.join("b").join("sub")).unwrap();
+    std::fs::write(real.join("b").join("sub").join("f.txt"), "b\n").unwrap();
+
+    let link = tmp.join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    // Roots through symlink, ignore via canonical path under backup.
+    let a_via_link = link.join("a").to_str().unwrap().to_string();
+    let b_via_link = link.join("b").to_str().unwrap().to_string();
+    let real_canonical = real.canonicalize().unwrap();
+    let ignore_via_real = real_canonical.join("b").join("sub").to_str().unwrap().to_string();
+
+    let assert = cmd()
+        .args([&a_via_link, &b_via_link, "-i", &ignore_via_real])
+        .assert()
+        .success();
+    let output = stdout_of(&assert);
+
+    assert!(
+        some_line_has(&output, "SKIP:", "sub"),
+        "sub should be skipped via canonical backup --ignore path, got:\n{}",
+        output
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+#[test]
 fn ignore_through_different_symlink_alias_errors() {
     // Root typed through one symlink, ignore through a different symlink to
     // the same place. This should error — we can't resolve arbitrary aliases.
