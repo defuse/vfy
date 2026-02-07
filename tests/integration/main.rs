@@ -14,7 +14,7 @@ mod symlinks_nested;
 use assert_cmd::Command;
 
 pub fn cmd() -> Command {
-    Command::cargo_bin("vfy").unwrap()
+    assert_cmd::cargo_bin_cmd!("vfy")
 }
 
 /// Check that at least one line contains both `prefix` and `needle`.

@@ -11,7 +11,6 @@
 //!
 //! Optional debug_contains/debug_excludes fields allow checking DEBUG output lines.
 
-use assert_cmd::Command;
 use std::path::Path;
 use std::process::Command as StdCommand;
 
@@ -501,8 +500,7 @@ pub fn run_and_check_full(
     let mut args: Vec<&str> = vec![a_str, b_str];
     args.extend_from_slice(flags);
 
-    let output = Command::cargo_bin("vfy")
-        .unwrap()
+    let output = assert_cmd::cargo_bin_cmd!("vfy")
         .args(&args)
         .output()
         .expect("failed to run vfy");

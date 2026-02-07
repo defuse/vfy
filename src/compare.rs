@@ -729,12 +729,12 @@ fn compare_file_content(
 
     // Sample check — only if sizes match and samples > 0
     if !reasons.any() && config.samples > 0 && orig_size > 0 {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let sample_size: u64 = 32;
 
         for _ in 0..config.samples {
             let max_offset = orig_size.saturating_sub(sample_size);
-            let offset = rng.gen_range(0..=max_offset);
+            let offset = rng.random_range(0..=max_offset);
             let read_len = (orig_size - offset).min(sample_size) as usize;
 
             match (
