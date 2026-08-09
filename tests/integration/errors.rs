@@ -79,7 +79,42 @@ case!(unreadable_dir_in_original {
     special_files: 0,
     // root + ok.txt match
     similarities: 2,
-    skipped: 0,
+    // The SKIP we printed for the backup side has to be counted, the same way
+    // an unreadable *file* in the original counts its backup-side SKIP.
+    skipped: 1,
+    errors: 1,
+    symmetric: false,
+});
+
+// Same branch as above, reached with a file rather than a directory on the
+// backup side: the original errored, so we refuse to call the backup "extra",
+// and the SKIP that says so must show up in the summary.
+case!(unreadable_dir_in_original_vs_backup_file {
+    orig: [
+        DirUnreadable("noread_dir"),
+    ],
+    backup: [
+        File("noread_dir", "backup has a file here\n"),
+    ],
+    flags: [],
+    lines: [
+        "ERROR: noread_dir",
+        "SKIP: noread_dir",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    output_contains: ["Skipped: 1", "Errors: 1"],
+    output_excludes: ["EXTRA-FILE", "MISSING"],
+    // root + the errored directory
+    original_processed: 2,
+    // root only: we could not verify the backup, so we did not process it
+    backup_processed: 1,
+    missing: 0,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 1,
     errors: 1,
     symmetric: false,
 });

@@ -796,3 +796,118 @@ case!(symlink_mismatch_summary {
     skipped: 1,
     errors: 0,
 });
+
+// ===========================================================================
+// Reporting a missing symlink under --follow
+//
+// The symlink and the thing it resolves to are counted as two separate items,
+// so `Missing` is deliberately larger than the number of MISSING- lines shown
+// at the default verbosity — the same way children of a MISSING-DIR are counted
+// but not listed. These cases pin that down so the intent stays visible.
+// ===========================================================================
+
+// Default verbosity: only the symlink itself is listed, but its resolved target
+// is still counted.
+case!(missing_symlink_resolution_counted_not_printed {
+    orig: [
+        File("f.txt", "hi\n"),
+        Sym("link", "f.txt"),
+    ],
+    backup: [],
+    flags: ["--follow"],
+    lines: [
+        "MISSING-FILE: a/f.txt",
+        "MISSING-SYMLINK: a/link",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    // Two entries in the tree, three missing items: f.txt, link, and the file
+    // link resolves to.
+    output_contains: ["Missing: 3"],
+    output_excludes: [],
+    // root + f.txt + link + link's resolved target
+    original_processed: 4,
+    backup_processed: 1,
+    missing: 3,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
+
+// -vv: the resolved target gets its own line. Note it is printed under the
+// symlink's own path, not the path it resolves to.
+case!(missing_symlink_resolution_printed_at_vv {
+    orig: [
+        File("f.txt", "hi\n"),
+        Sym("link", "f.txt"),
+    ],
+    backup: [],
+    flags: ["--follow", "-vv"],
+    lines: [
+        "MISSING-FILE: a/f.txt",
+        "MISSING-SYMLINK: a/link",
+        "MISSING-FILE: a/link",
+    ],
+    original_processed: 4,
+    backup_processed: 1,
+    missing: 3,
+    different: 0,
+    extras: 0,
+    special_files: 0,
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+});
+
+// The sharpest form of the "structural failure" rule in the --help text: the
+// backup replaces a real directory with a symlink to data that is byte-for-byte
+// identical, and --follow is on, so we could easily have compared through the
+// symlink and called it a match.
+//
+// We must not. The backup tree does not contain the actual data, so the original
+// is MISSING and the symlink is EXTRA. Contrast with two symlinks whose targets
+// merely differ, which is a metadata difference and does keep comparing
+// contents -- see symlink_dir_different_targets_with_follow.
+case!(dir_vs_symlink_to_identical_data_is_not_a_match {
+    orig: [
+        Dir("data"),
+        File("data/file.txt", "payload\n"),
+    ],
+    backup: [
+        Dir("elsewhere"),
+        File("elsewhere/file.txt", "payload\n"),
+        Sym("data", "elsewhere"),
+    ],
+    flags: ["--follow", "--all", "-vv"],
+    lines: [
+        "DIFFERENT-SYMLINK-STATUS: a/data",
+        "MISSING-DIR: a/data",
+        "MISSING-FILE: a/data/file.txt",
+        "EXTRA-SYMLINK: b/data",
+        "EXTRA-DIR: b/data",
+        "EXTRA-FILE: b/data/file.txt",
+        "EXTRA-DIR: b/elsewhere",
+        "EXTRA-FILE: b/elsewhere/file.txt",
+    ],
+    debug_contains: [],
+    debug_excludes: [],
+    // Never treated as equivalent, no matter that the bytes match.
+    output_contains: ["Missing: 2"],
+    output_excludes: [],
+    // root + data + data/file.txt
+    original_processed: 3,
+    // root + data(symlink) + data resolved + data/file.txt + elsewhere + elsewhere/file.txt
+    backup_processed: 6,
+    missing: 2,
+    different: 1,
+    extras: 5,
+    special_files: 0,
+    // Only the roots. The identical payload is never counted as a similarity.
+    similarities: 1,
+    skipped: 0,
+    errors: 0,
+    symmetric: false,
+});
