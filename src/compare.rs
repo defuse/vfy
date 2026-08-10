@@ -79,6 +79,116 @@ impl Direction {
     }
 }
 
+// -- Symlink loop detection ---------------------------------------------------
+
+/// Identity of a directory, for deciding whether we have been here before.
+///
+/// Only needed with --follow. A symlink pointing at a directory it lives under
+/// (`latest -> .`, `sub/up -> ..`) resolves successfully every time, so nothing
+/// stops us walking through it again and again except the kernel's 40-symlink
+/// path limit. That alone re-walks the subtree ~40 times over, and two such
+/// symlinks in one directory make the walk branch exponentially and never
+/// finish.
+///
+/// Cheap: load_meta() already stat()ed the directory, so this is just field
+/// access, no extra syscall.
+#[cfg(unix)]
+fn dir_identity(meta: &fs::Metadata) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    Some((meta.dev(), meta.ino()))
+}
+
+/// No cheap inode identity on non-Unix, so loop detection is disabled there.
+/// Same caveat as the rest of our non-Unix behavior, see #29.
+#[cfg(not(unix))]
+fn dir_identity(_meta: &fs::Metadata) -> Option<(u64, u64)> {
+    None
+}
+
+/// The directories we walked through to reach where we are now, innermost
+/// first. Built on the stack as we recurse, so there is nothing to allocate and
+/// nothing to unwind on the way back out.
+struct DirChain<'a> {
+    id: (u64, u64),
+    parent: Option<&'a DirChain<'a>>,
+}
+
+impl<'a> DirChain<'a> {
+    /// True if `meta`'s directory is one we are already inside. Always false
+    /// when we have no usable identity for it.
+    fn is_ancestor(chain: Option<&DirChain>, meta: &fs::Metadata) -> bool {
+        let Some(id) = dir_identity(meta) else {
+            return false;
+        };
+        let mut node = chain;
+        while let Some(n) = node {
+            if n.id == id {
+                return true;
+            }
+            node = n.parent;
+        }
+        false
+    }
+
+    /// Chain to hand to the children of `meta`'s directory. Returns None when we
+    /// have no usable identity, in which case callers keep the parent's chain.
+    fn extend(chain: Option<&'a DirChain<'a>>, meta: &fs::Metadata) -> Option<DirChain<'a>> {
+        dir_identity(meta).map(|id| DirChain { id, parent: chain })
+    }
+}
+
+/// The two chains, one per tree. They are always threaded together, since
+/// compare() walks both trees in lockstep.
+#[derive(Clone, Copy)]
+struct Chains<'a> {
+    orig: Option<&'a DirChain<'a>>,
+    backup: Option<&'a DirChain<'a>>,
+}
+
+/// Report that `path` resolved back into a directory we are already walking.
+///
+/// Counts as an error as well as a skip. No data goes uncompared -- the
+/// directory we looped back to is one we are already walking, so its contents
+/// get compared at that level -- but a tree that links back into itself is
+/// malformed enough that the user should be told, and told loudly enough to
+/// affect the exit code.
+fn report_loop(path: &Path, stats: &Stats) {
+    println!(
+        "SYMLINK-LOOP: [{}] (resolves to a directory we are already inside)",
+        path.display()
+    );
+    stats.inc_errors();
+    stats.inc_skipped();
+}
+
+// -- Ignore matching ----------------------------------------------------------
+
+/// True if `path` was ignored via --ignore, either directly or because the same
+/// path in the other tree was ignored.
+///
+/// Ignoring one side ignores the other, so that --ignore describes a location in
+/// the backup rather than a location in one particular tree. compare() gets this
+/// for free by checking both sides of the pair it holds, but a subtree that only
+/// exists on one side is walked by report(), which only ever sees one path and
+/// has to map it across itself.
+fn is_ignored(path: &Path, config: &Config) -> bool {
+    if config.ignore.iter().any(|ig| ig == path) {
+        return true;
+    }
+
+    // Same relative position in the other tree. Both roots are canonical and so
+    // is `path`, so this is a plain prefix swap.
+    let mirrored = if let Ok(suffix) = path.strip_prefix(&config.original) {
+        config.backup.join(suffix)
+    } else if let Ok(suffix) = path.strip_prefix(&config.backup) {
+        config.original.join(suffix)
+    } else {
+        return false;
+    };
+
+    config.ignore.contains(&mirrored)
+}
+
 // -- Metadata loading ---------------------------------------------------------
 
 /// Load metadata for a path.
@@ -166,7 +276,8 @@ fn read_dir_entries(dir: &Path) -> Result<Vec<OsString>, std::io::Error> {
 /// Compare directories according to the provided Config.
 /// Populates stats with counts and prints log messages to stdout.
 pub fn compare_dirs(config: &Config, stats: &Stats) {
-    compare(&config.original, &config.backup, false, config, stats);
+    let chains = Chains { orig: None, backup: None };
+    compare(&config.original, &config.backup, false, chains, config, stats);
 }
 
 // -- Comparison ---------------------------------------------------------------
@@ -178,15 +289,16 @@ pub fn compare_dirs(config: &Config, stats: &Stats) {
 ///
 /// Pre: Neither path counted as an item yet. Both sides expected to exist.
 /// Post: Both counted. Fully categorized. Descendants processed.
-fn compare(
+fn compare<'a>(
     orig: &Path,
     backup: &Path,
     follow: bool,
+    chains: Chains<'a>,
     config: &Config,
     stats: &Stats,
 ) {
     // Check ignore first so we don't encounter errors, different fs, or special files that the user ignored.
-    if config.ignore.iter().any(|ig| ig == orig || ig == backup) {
+    if is_ignored(orig, config) || is_ignored(backup, config) {
         // One side may not exist, but be conservative and tell the user we're skipping both sides.
         println!("SKIP: [{}]", orig.display());
         stats.inc_skipped();
@@ -299,15 +411,15 @@ fn compare(
     // Same type on both sides: compare by type / recurse into directories
     match (&meta_orig, &meta_back) {
         (Meta::File(om), Meta::File(bm)) => {
-            compare_files(orig, backup, om, bm, config, stats);
+            compare_files(orig, backup, om, bm, chains.orig, config, stats);
             return;
         }
         (Meta::Dir(_, _), Meta::Dir(_, _)) => {
-            compare_directories(orig, backup, &meta_orig, &meta_back, config, stats);
+            compare_directories(orig, backup, &meta_orig, &meta_back, chains, config, stats);
             return;
         }
         (Meta::Symlink(_), Meta::Symlink(_)) => {
-            compare_symlinks(orig, backup, config, stats);
+            compare_symlinks(orig, backup, chains, config, stats);
             return;
         }
         _ => {}
@@ -353,8 +465,11 @@ fn compare(
 
     if meta_orig.is_file_dir_or_symlink() {
         // If we can't positively verify the backup exists, conservatively report missing.
-        // We pass false so that we get a MISSING-SYMLINK *and* MISSING-FILE for resolving symlinks.
-        report(orig, Direction::Missing, false, true, config, stats);
+        // We pass false so that a symlink is reported as MISSING-SYMLINK here and
+        // its resolved target is counted separately by the recursive report()
+        // call. Only -vv prints a line for that target; at lower verbosity it is
+        // counted but not shown, like the children of a MISSING-DIR.
+        report(orig, Direction::Missing, false, true, chains.orig, config, stats);
     }
 
     if meta_back.is_file_dir_or_symlink() {
@@ -364,6 +479,7 @@ fn compare(
             Meta::Error(_) => {
                 // Let the user know we are skipping the other side, though.
                 println!("SKIP: [{}]", backup.display());
+                stats.inc_skipped();
             },
             _ => {
                 // TODO: See #24, reporting backup files as "extra" when the
@@ -371,7 +487,7 @@ fn compare(
                 // type may not be what we want to do, i.e. EXTRA might indicate
                 // to the user they can safely delete files, when that's not
                 // necesarily true.
-                report(backup, Direction::Extra, false, true, config, stats);
+                report(backup, Direction::Extra, false, true, chains.backup, config, stats);
             }
         }
     }
@@ -381,11 +497,12 @@ fn compare(
 ///
 /// Pre: Both are files. Neither counted. Metadata loaded.
 /// Post: Both counted. Content compared. Log messages shown.
-fn compare_files(
+fn compare_files<'a>(
     orig: &Path,
     backup: &Path,
     orig_meta: &fs::Metadata,
     backup_meta: &fs::Metadata,
+    orig_chain: Option<&'a DirChain<'a>>,
     config: &Config,
     stats: &Stats,
 ) {
@@ -425,7 +542,7 @@ fn compare_files(
             stats.inc_backup_items();
             // report() assumes its input hasn't been counted (inc_original_items()) yet.
             // Can't read backup, be conservative and report original as missing
-            report(orig, Direction::Missing, false, true, config, stats);
+            report(orig, Direction::Missing, false, true, orig_chain, config, stats);
         }
         FileCompareResult::BothError => {
             // Both failed, errors already reported and counted
@@ -439,11 +556,12 @@ fn compare_files(
 ///
 /// Pre: Both are dirs. Entries pre-loaded. Neither counted.
 /// Post: Both counted. All children processed. Logs output.
-fn compare_directories(
+fn compare_directories<'a>(
     orig: &Path,
     backup: &Path,
     orig_meta: &Meta,
     backup_meta: &Meta,
+    chains: Chains<'a>,
     config: &Config,
     stats: &Stats,
 ) {
@@ -451,13 +569,13 @@ fn compare_directories(
         println!("DEBUG: Comparing [{}] to [{}]", orig.display(), backup.display());
     }
 
-    let orig_entries = match orig_meta {
-        Meta::Dir(_, e) => e,
+    let (orig_fs_meta, orig_entries) = match orig_meta {
+        Meta::Dir(m, e) => (m, e),
         _ => unreachable!()
     };
 
-    let backup_entries = match backup_meta {
-        Meta::Dir(_, e) => e,
+    let (backup_fs_meta, backup_entries) = match backup_meta {
+        Meta::Dir(m, e) => (m, e),
         _ => unreachable!()
     };
 
@@ -465,6 +583,44 @@ fn compare_directories(
     stats.inc_backup_items();
     // Both directories being present counts as a similarity, even if their contents differ
     stats.inc_similarities();
+
+    let orig_child = DirChain::extend(chains.orig, orig_fs_meta);
+    let backup_child = DirChain::extend(chains.backup, backup_fs_meta);
+    let child_chains = Chains {
+        orig: orig_child.as_ref().or(chains.orig),
+        backup: backup_child.as_ref().or(chains.backup),
+    };
+
+    // The directories themselves matched, but if --follow walked us back into a
+    // directory we are already inside, stop before descending.
+    let orig_loops = DirChain::is_ancestor(chains.orig, orig_fs_meta);
+    let backup_loops = DirChain::is_ancestor(chains.backup, backup_fs_meta);
+    if orig_loops || backup_loops {
+        // A looping side contributes nothing new: it resolved to a directory we
+        // are already walking, whose contents get compared there.
+        if orig_loops {
+            report_loop(orig, stats);
+        } else {
+            // The original did not loop, so it holds real data that this
+            // comparison never got to check against anything. Report it missing,
+            // the same as when the backup side errors out: we cannot claim it is
+            // backed up, and saying nothing would let it pass silently.
+            for name in orig_entries {
+                report(&orig.join(name), Direction::Missing, false, true, child_chains.orig, config, stats);
+            }
+        }
+
+        if backup_loops {
+            report_loop(backup, stats);
+        } else {
+            // Deliberately NOT reported as extra. We never established that the
+            // original lacks this data, and EXTRA reads as "safe to delete".
+            println!("SKIP: [{}]", backup.display());
+            stats.inc_skipped();
+        }
+
+        return;
+    }
 
     let mut backup_set: HashSet<&OsString> = backup_entries.into_iter().collect();
 
@@ -474,9 +630,9 @@ fn compare_directories(
 
         let in_backup = backup_set.remove(name);
         if in_backup {
-            compare(&orig_path, &backup_path, false, config, stats);
+            compare(&orig_path, &backup_path, false, child_chains, config, stats);
         } else {
-            report(&orig_path, Direction::Missing, false, true, config, stats);
+            report(&orig_path, Direction::Missing, false, true, child_chains.orig, config, stats);
         }
     }
 
@@ -486,7 +642,7 @@ fn compare_directories(
 
     for name in &extras {
         let backup_path = backup.join(name);
-        report(&backup_path, Direction::Extra, false, true, config, stats);
+        report(&backup_path, Direction::Extra, false, true, child_chains.backup, config, stats);
     }
 }
 
@@ -495,9 +651,10 @@ fn compare_directories(
 /// Pre: Both are symlinks. Neither counted.
 /// Post: Both counted. Targets compared. If --follow, resolved content
 /// compared via compare. Logs output.
-fn compare_symlinks(
+fn compare_symlinks<'a>(
     orig: &Path,
     backup: &Path,
+    chains: Chains<'a>,
     config: &Config,
     stats: &Stats,
 ) {
@@ -536,7 +693,7 @@ fn compare_symlinks(
 
             // Conservatively report the original side as missing, since we
             // can't compare due to the error.
-            report(orig, Direction::Missing, false, true, config, stats);
+            report(orig, Direction::Missing, false, true, chains.orig, config, stats);
 
             return;
         }
@@ -562,7 +719,7 @@ fn compare_symlinks(
         // --follow: compare resolved content as additional items.
         // Symlinks are already counted above. The resolved content is
         // counted separately by compare (via its helpers or report).
-        compare(orig, backup, true, config, stats);
+        compare(orig, backup, true, chains, config, stats);
     } else {
         println!(
             "SYMLINK-SKIPPED: [{}] (use --follow to compare resolved content)",
@@ -578,20 +735,18 @@ fn compare_symlinks(
 ///
 /// Pre: Entry has NOT been counted as an item. Callers other than report() itself must set follow=false.
 /// Post: Entry counted. Classified. Descendants processed. Logs output.
-fn report(
+fn report<'a>(
     path: &Path,
     direction: Direction,
     follow: bool,
     // Gets set to true for the top-level call, and false for recursive calls unless verbosity level is >= Files.
     print: bool,
+    chain: Option<&'a DirChain<'a>>,
     config: &Config,
     stats: &Stats,
 ) {
     // Check ignore first (before any I/O)
-    // TODO (#35): --ignore paths should automatically apply to the other side
-    // (i.e. to the backup, when ignoring a folder in original), but this is not
-    // implemented yet.
-    if config.ignore.iter().any(|ig| ig == path) {
+    if is_ignored(path, config) {
         println!("SKIP: [{}]", path.display());
         stats.inc_skipped();
         return;
@@ -680,13 +835,25 @@ fn report(
     let print_children = config.verbosity >= Verbosity::Files;
 
     match &meta {
-        Meta::Dir(_, entries) => {
+        Meta::Dir(m, entries) => {
+            // Same loop guard as compare_directories. Here there is only one
+            // tree in play, and whatever we looped back to is already being
+            // reported at the level we looped back to, so there is no
+            // one-sided data to account for.
+            if DirChain::is_ancestor(chain, m) {
+                report_loop(path, stats);
+                return;
+            }
+
+            let child_chain = DirChain::extend(chain, m);
+            let child_chain = child_chain.as_ref().or(chain);
+
             for name in entries {
-                report(&path.join(name), direction, false, print_children, config, stats);
+                report(&path.join(name), direction, false, print_children, child_chain, config, stats);
             }
         }
         Meta::Symlink(_) if config.follow => {
-            report(path, direction, true, print_children, config, stats);
+            report(path, direction, true, print_children, chain, config, stats);
         }
         // All of these leaf types have already been reported above.
         Meta::File(_) | Meta::Symlink(_) | Meta::Special(_) | Meta::Dangling | Meta::Error(_) => {}

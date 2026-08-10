@@ -40,6 +40,18 @@ WARNING: By default, it only compares by file size; files themselves are not rea
 WARNING: Only officially supported on Linux, but seems to work on Windows/Mac.
 WARNING: Output behavior is currently NOT STABLE between releases.
 
+ORIGINAL and BACKUP are not interchangeable:
+  EXTRA-* suggests data can be deleted from the backup, so a wrong EXTRA-* is
+  more dangerous than a wrong MISSING-*. When one side cannot be checked (an
+  error, or a symlink loop), we report the side we can still see, and which
+  side failed decides what we say about it:
+    - Backup could not be checked: the original is reported MISSING-*, since
+      we cannot confirm it was backed up.
+    - Original could not be checked: the backup is only reported SKIP, since
+      we cannot confirm the original lacks it, and EXTRA-* would invite
+      deleting it.
+  Swapping the two arguments does not simply mirror the output.
+
 Verbosity levels:
   (default)  Show differences only. For missing/extra directories, only the
              top-level directory is listed; children are counted but not shown.
@@ -65,6 +77,7 @@ Output prefixes (grep-friendly):
   SPECIAL-FILE:                  Entry is a device, FIFO, socket, etc.
   SYMLINK-SKIPPED:               Symlink skipped (use --follow to compare resolved content)
   DANGLING-SYMLINK:              Symlink target does not exist (with --follow)
+  SYMLINK-LOOP:                  Symlink resolves into a directory already being walked (--follow)
   DIFFERENT-FS:                  Different filesystem skipped (--one-filesystem)
   SKIP:                          Entry skipped via --ignore or error/FS/type mismatch between sides
   ERROR:                         I/O or permission error
@@ -79,9 +92,27 @@ Symlink handling with --follow:
   When one side is a symlink and the other is a regular file/directory:
     - Reports DIFFERENT-SYMLINK-STATUS for the type mismatch.
     - Reports original as MISSING-*, backup symlink as EXTRA-* (or vice-versa).
-    - Does NOT compare contents (rationale: a backup directory which only
-      contains a symlink to files that are actually in the original should
-      probably not be considered a correct backup.)
+    - Does NOT compare contents.
+
+  Rationale: A symlink replacing a directory is a structural failure--the backup
+  holds a pointer where the data should be. Comparing through it would resolve
+  to whatever it points at, possibly the original's own files, and report a
+  match, so a backup that only points back at the original would look correct
+  while holding no copy at all. We do not try to tell that case apart from a
+  harmless one, so we never compare through, and report the data as missing
+  instead. Two symlinks with different targets is a metadata difference rather
+  than a structural one--each tree still has whatever its own link points at--so
+  there the resolved contents are worth comparing.
+
+  When a symlink resolves to a directory that is already being walked
+  (e.g. `latest -> .` or `sub/up -> ..`):
+    - Reports SYMLINK-LOOP, stops descending, and counts an error.
+    - No data goes uncompared: that directory's contents get compared where it
+      is really walked, so following the loop would only repeat that work.
+    - If only one side loops, the other still points at data that never got
+      checked, and the rule above applies to it: if that data is in the
+      original it is reported MISSING-*, if it is in the backup it is only
+      reported SKIP.
 ```
 
 Note: The `--one-filesystem` tests assume your development environment is a

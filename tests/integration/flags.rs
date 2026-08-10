@@ -535,6 +535,66 @@ fn ignore_subdir_inside_missing_dir() {
     );
 }
 
+/// Ignoring a path is documented to ignore the matching path in the other tree.
+/// That holds when both sides are walked as a pair, but a whole subtree that
+/// only exists on one side is walked by report(), which used to only match the
+/// ignore path literally.
+///
+/// Here `a/parent` is a symlink and `b/parent` is a real directory, so the two
+/// are never paired up: the backup side is reported wholesale as extra. The
+/// ignored `a/parent/skip.txt` has to suppress `b/parent/skip.txt` all the same.
+#[test]
+fn ignore_applies_to_other_tree_inside_extra_dir() {
+    const ORIG: &[Entry] = &[
+        Sym("parent", "real"),
+        Dir("real"),
+        File("real/keep.txt", "keep\n"),
+        File("real/skip.txt", "skip\n"),
+    ];
+    const BACKUP: &[Entry] = &[
+        Dir("parent"),
+        File("parent/keep.txt", "keep\n"),
+        File("parent/skip.txt", "skip\n"),
+    ];
+
+    let (_tmp, a, b) = setup_legacy_test_dirs(ORIG, BACKUP);
+    // Reached through the a/parent symlink, so this exists and validates.
+    let ignore_path = format!("{}/parent/skip.txt", a);
+
+    // -vv so that entries inside the EXTRA-DIR are listed individually.
+    let assert = cmd()
+        .args([&a, &b, "-v", "-v", "-i", &ignore_path])
+        .assert()
+        .code(1);
+    let output = stdout_of(&assert);
+
+    assert!(
+        some_line_has(&output, "EXTRA-DIR:", "parent"),
+        "b/parent should still be reported as EXTRA-DIR, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "EXTRA-FILE:", "parent/keep.txt"),
+        "keep.txt is not ignored and should be EXTRA-FILE, got:\n{}",
+        output
+    );
+    assert!(
+        !some_line_has(&output, "EXTRA-FILE:", "parent/skip.txt"),
+        "b/parent/skip.txt should be ignored via the a/ side, got:\n{}",
+        output
+    );
+    assert!(
+        some_line_has(&output, "SKIP:", "parent/skip.txt"),
+        "Expected a SKIP line for b/parent/skip.txt, got:\n{}",
+        output
+    );
+    assert!(
+        output.contains("Skipped: 1"),
+        "Expected Skipped: 1 for the mirrored ignore, got:\n{}",
+        output
+    );
+}
+
 #[test]
 fn ignore_symlink_to_file() {
     // C3: --ignore on a symlink should use the symlink's own path, not the resolved target.

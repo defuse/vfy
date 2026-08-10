@@ -404,6 +404,7 @@ pub fn create_entries(dir: &Path, entries: &[Entry]) -> PermissionGuard {
 /// Rules:
 /// - MISSING-X ↔ EXTRA-X  (prefix swap + path a/↔b/)
 /// - DANGLING-SYMLINK:     (path a/↔b/ only)
+/// - SYMLINK-LOOP:         (path a/↔b/ only)
 /// - Everything else:      unchanged (DIFFERENT-*, SPECIAL-FILE, SYMLINK-SKIPPED
 ///   always report the orig path, which is always a/)
 pub fn reverse_expected_line(line: &str) -> String {
@@ -426,6 +427,7 @@ pub fn reverse_expected_line(line: &str) -> String {
         "EXTRA-ERROR" => ("MISSING-ERROR", true),
         "DANGLING-SYMLINK" => ("DANGLING-SYMLINK", true),
         "SPECIAL-FILE" => ("SPECIAL-FILE", true),
+        "SYMLINK-LOOP" => ("SYMLINK-LOOP", true),
         _ => (prefix, false),
     };
 

@@ -22,11 +22,12 @@ $ vfy
 '"$HELP_OUTPUT"'
 ```'
 
-# Replace everything between the first ``` and ``` in the README.
-# Use perl since the replacement contains newlines and special characters.
+# Replace the fenced block that starts with "$ vfy". Anchoring on that line
+# rather than on the first fence in the file keeps us from overwriting the
+# install instructions, which also live in a fenced block above this one.
 REPLACEMENT="$REPLACEMENT" perl -0777 -i -pe '
     my $r = $ENV{REPLACEMENT};
-    s/^```\n.*?^```/$r/ms;
+    s/^```\n\$ vfy\n.*?^```/$r/ms or die "help block not found in README\n";
 ' "$README"
 
 echo "README.md updated."
